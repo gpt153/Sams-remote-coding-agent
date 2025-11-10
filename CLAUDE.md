@@ -4,6 +4,8 @@
 
 ---
 
+## IMPORTANT: Archon project id: c9bd0aa0-4298-48c5-8f1f-28ef7c142240
+
 ## Project Overview
 
 **Remote Agentic Coding Platform**: Control AI coding assistants (Claude Code SDK, Codex SDK) remotely from Slack, Telegram, and GitHub. Built with **Node.js + TypeScript + PostgreSQL**, single-developer tool for practitioners of the Dynamous Agentic Coding Course. Architecture prioritizes simplicity, flexibility, and user control.
@@ -212,6 +214,11 @@ GITHUB_APP_ID=12345
 GITHUB_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
 WEBHOOK_SECRET=<random string>
 
+# Platform Streaming Mode (stream | batch)
+TELEGRAM_STREAMING_MODE=stream  # Default: stream
+SLACK_STREAMING_MODE=stream     # Default: stream
+GITHUB_STREAMING_MODE=batch     # Default: batch
+
 # Optional
 WORKSPACE_PATH=/workspace
 PORT=3000
@@ -316,20 +323,35 @@ console.log('Processing...');
 ### Streaming Patterns
 
 **AI Response Streaming:**
+Platform streaming mode configured per platform via environment variables (`{PLATFORM}_STREAMING_MODE`).
+
 ```typescript
+// Stream mode: Send each chunk immediately (real-time)
 for await (const event of client.streamResponse()) {
-  if (event.type === 'text') {
-    await platform.sendMessage(conversationId, event.content);
-  } else if (event.type === 'tool') {
-    await platform.sendMessage(conversationId, `🔧 ${event.toolName}`);
+  if (streamingMode === 'stream') {
+    if (event.type === 'text') {
+      await platform.sendMessage(conversationId, event.content);
+    } else if (event.type === 'tool') {
+      await platform.sendMessage(conversationId, `🔧 ${event.toolName}`);
+    }
+  } else {
+    // Batch mode: Accumulate chunks
+    buffer.push(event);
   }
+}
+
+// Batch mode: Send accumulated response
+if (streamingMode === 'batch') {
+  const fullResponse = buffer.map(e => e.content).join('');
+  await platform.sendMessage(conversationId, fullResponse);
 }
 ```
 
-**Platform-Specific:**
-- **Telegram/Slack**: Send each chunk immediately
-- **GitHub**: Post single comment after completion (no streaming, rate limits)
-- **Typing indicators**: Send periodically during long operations
+**Platform-Specific Defaults:**
+- **Telegram/Slack**: `stream` mode (real-time chat experience)
+- **GitHub**: `batch` mode (single comment, avoid spam)
+- **Future platforms** (Asana, Notion): `batch` mode (single update)
+- **Typing indicators**: Send periodically during long operations in `stream` mode
 
 ### Command System Patterns
 

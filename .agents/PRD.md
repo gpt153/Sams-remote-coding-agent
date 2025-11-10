@@ -396,7 +396,12 @@ Bot: Session cleared. Starting fresh session.
 **Environment Variables:**
 ```env
 TELEGRAM_BOT_TOKEN=<from @BotFather>
+TELEGRAM_STREAMING_MODE=stream  # stream (default) | batch
 ```
+
+**Streaming Behavior:**
+- **stream** (default): Send each AI response chunk as separate message (real-time experience)
+- **batch**: Accumulate all chunks, send single final message
 
 **Interaction:**
 - User sends message to bot
@@ -412,7 +417,12 @@ TELEGRAM_BOT_TOKEN=<from @BotFather>
 **Environment Variables:**
 ```env
 SLACK_BOT_TOKEN=xoxb-...
+SLACK_STREAMING_MODE=stream  # stream (default) | batch
 ```
+
+**Streaming Behavior:**
+- **stream** (default): Send each AI response chunk as separate message (real-time experience)
+- **batch**: Accumulate all chunks, send single final message
 
 **Required OAuth Scopes:**
 - `chat:write` - Send messages
@@ -440,7 +450,13 @@ GH_TOKEN=ghp_...  # Same token, used by gh CLI
 GITHUB_APP_ID=12345
 GITHUB_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
 WEBHOOK_SECRET=<random string for webhook verification>
+
+GITHUB_STREAMING_MODE=batch  # stream | batch (default)
 ```
+
+**Streaming Behavior:**
+- **batch** (default): Accumulate all chunks, post single comment (avoid comment spam)
+- **stream**: Send each chunk as separate comment (NOT recommended - creates noise)
 
 **Authentication Strategy:**
 - **GitHub CLI operations**: Use `GITHUB_TOKEN` for cloning repos, making commits, creating PRs/issues
@@ -564,9 +580,11 @@ interface IAssistantClient {
 
 **Streaming Response Handling:**
 - Stream events from AI SDK in real-time
-- Send each event/chunk immediately to platform (no buffering)
+- Platform-specific streaming mode configured via environment variables
+- **Stream mode:** Send each chunk immediately (real-time, chat platforms)
+- **Batch mode:** Accumulate chunks, send final response (single message, issue trackers)
 - Event types: `text` (agent messages), `tool` (tool usage), `thinking` (optional)
-- Pattern: `for await (const event of events) { await platform.send(event) }`
+- Pattern: `for await (const event of events) { mode === 'stream' ? await platform.send(event) : buffer.push(event) }`
 - Reference implementation: `.agents/examples/codex-telegram-bot/dist/bot/handlers/message.js:74-134`
 
 ---
@@ -598,8 +616,16 @@ GITHUB_TOKEN=ghp_...
 # GITHUB_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
 WEBHOOK_SECRET=<random string for GitHub webhook verification>
 
+# Platform Streaming Mode (stream | batch)
+# - stream: Send each AI response chunk as separate message (real-time)
+# - batch: Accumulate chunks, send only final complete response
+TELEGRAM_STREAMING_MODE=stream  # Default: stream (real-time chat experience)
+SLACK_STREAMING_MODE=stream     # Default: stream (real-time chat experience)
+GITHUB_STREAMING_MODE=batch     # Default: batch (single comment, avoid spam)
+
 # Optional
 WORKSPACE_PATH=/workspace
+PORT=3000
 ```
 
 ---
