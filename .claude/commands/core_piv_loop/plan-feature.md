@@ -65,6 +65,11 @@ So that <benefit/value>
 - Find relevant documentation in docs/, ai_docs/, .agents/reference or ai-wiki if available
 - Note library versions and compatibility requirements
 
+**If Planning a New Feature (not bug fix):**
+- Read `.agents/reference/new-features.md` for platform-specific patterns
+- Understand interface requirements (IPlatformAdapter, IAssistantClient)
+- Review extension patterns for adapters, clients, commands, database operations
+
 **4. Testing Patterns**
 
 - Identify test framework and structure (pytest, jest, etc.)
@@ -142,6 +147,13 @@ So that <benefit/value>
 - Design for extensibility and future modifications
 - Plan for backward compatibility if needed
 - Consider scalability implications
+
+**PRD Validation (if PRD exists):**
+- Read `.agents/PRD.md` if it exists in the project
+- Verify plan preserves architectural patterns defined in PRD
+- Ensure interface abstractions (IPlatformAdapter, IAssistantClient, etc.) are included in types section
+- Confirm implementation uses interface types, not concrete classes in core logic
+- Validate against any architectural principles or design constraints in PRD
 
 ### Phase 5: Plan Structure Generation
 

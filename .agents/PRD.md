@@ -23,15 +23,17 @@ This is a **single-developer tool** built for practitioners of the Dynamous Agen
 
 ## Database Schema
 
-### 1. `conversations`
+**Note:** All tables use the `remote_agent_` prefix to avoid conflicts with existing database tables.
+
+### 1. `remote_agent_conversations`
 **Purpose:** Track each platform conversation
 
 ```sql
-CREATE TABLE conversations (
+CREATE TABLE remote_agent_conversations (
   id UUID PRIMARY KEY,
   platform_type VARCHAR(20), -- 'slack', 'telegram', 'github'
   platform_conversation_id VARCHAR(255), -- thread_ts, chat_id, repo#123
-  codebase_id UUID REFERENCES codebases(id), -- Which codebase context
+  codebase_id UUID REFERENCES remote_agent_codebases(id), -- Which codebase context
   cwd VARCHAR(500), -- Current working directory
   ai_assistant_type VARCHAR(20), -- 'claude', 'codex' - SET AT CREATION, cannot change mid-conversation
   created_at TIMESTAMP,
@@ -39,16 +41,16 @@ CREATE TABLE conversations (
   UNIQUE(platform_type, platform_conversation_id)
 );
 
-CREATE INDEX idx_conversations_codebase ON conversations(codebase_id);
+CREATE INDEX idx_remote_agent_conversations_codebase ON remote_agent_conversations(codebase_id);
 ```
 
 **Note:** AI assistant type is set when conversation starts and cannot be changed. Session IDs are specific to each assistant and cannot be transferred.
 
-### 2. `codebases`
+### 2. `remote_agent_codebases`
 **Purpose:** Define codebases and their commands
 
 ```sql
-CREATE TABLE codebases (
+CREATE TABLE remote_agent_codebases (
   id UUID PRIMARY KEY,
   name VARCHAR(255), -- User-friendly name
   repository_url VARCHAR(500), -- GitHub repo URL
@@ -86,14 +88,14 @@ CREATE TABLE codebases (
 }
 ```
 
-### 3. `sessions`
+### 3. `remote_agent_sessions`
 **Purpose:** Track AI SDK sessions
 
 ```sql
-CREATE TABLE sessions (
+CREATE TABLE remote_agent_sessions (
   id UUID PRIMARY KEY,
-  conversation_id UUID REFERENCES conversations(id),
-  codebase_id UUID REFERENCES codebases(id),
+  conversation_id UUID REFERENCES remote_agent_conversations(id),
+  codebase_id UUID REFERENCES remote_agent_codebases(id),
   ai_assistant_type VARCHAR(20), -- 'claude', 'codex'
   assistant_session_id VARCHAR(255), -- SDK session ID for resume
   active BOOLEAN DEFAULT true, -- Only one active session per conversation
@@ -102,8 +104,8 @@ CREATE TABLE sessions (
   ended_at TIMESTAMP
 );
 
-CREATE INDEX idx_sessions_conversation ON sessions(conversation_id, active);
-CREATE INDEX idx_sessions_codebase ON sessions(codebase_id);
+CREATE INDEX idx_remote_agent_sessions_conversation ON remote_agent_sessions(conversation_id, active);
+CREATE INDEX idx_remote_agent_sessions_codebase ON remote_agent_sessions(codebase_id);
 ```
 
 **Session Persistence:** Sessions persist across app restarts and are loaded from database.
