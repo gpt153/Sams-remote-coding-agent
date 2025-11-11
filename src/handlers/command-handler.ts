@@ -24,8 +24,7 @@ export function parseCommand(text: string): { command: string; args: string[] } 
   const command = matches[0].substring(1); // Remove leading '/'
   const args = matches.slice(1).map(arg => {
     // Remove surrounding quotes if present
-    if ((arg.startsWith('"') && arg.endsWith('"')) ||
-        (arg.startsWith("'") && arg.endsWith("'"))) {
+    if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
       return arg.slice(1, -1);
     }
     return arg;
@@ -61,7 +60,7 @@ Codebase:
 Session:
   /status - Show state
   /reset - Clear session
-  /help - Show help`
+  /help - Show help`,
       };
 
     case 'status': {
@@ -92,7 +91,7 @@ Session:
     case 'getcwd':
       return {
         success: true,
-        message: `Current working directory: ${conversation.cwd || 'Not set'}`
+        message: `Current working directory: ${conversation.cwd || 'Not set'}`,
       };
 
     case 'setcwd': {
@@ -107,22 +106,24 @@ Session:
       try {
         await execAsync(`git config --global --add safe.directory ${newCwd}`);
         console.log(`[Command] Added ${newCwd} to git safe.directory`);
-      } catch (error) {
+      } catch (_error) {
         // Ignore errors - directory might not be a git repo
-        console.log(`[Command] Could not add ${newCwd} to safe.directory (might not be a git repo)`);
+        console.log(
+          `[Command] Could not add ${newCwd} to safe.directory (might not be a git repo)`
+        );
       }
 
       // Reset session when changing working directory
       const session = await sessionDb.getActiveSession(conversation.id);
       if (session) {
         await sessionDb.deactivateSession(session.id);
-        console.log(`[Command] Deactivated session after cwd change`);
+        console.log('[Command] Deactivated session after cwd change');
       }
 
       return {
         success: true,
         message: `Working directory set to: ${newCwd}\n\nSession reset - starting fresh on next message.`,
-        modified: true
+        modified: true,
       };
     }
 
@@ -149,15 +150,21 @@ Session:
           // Convert: https://github.com/user/repo.git -> https://token@github.com/user/repo.git
           let authenticatedUrl = repoUrl;
           if (repoUrl.startsWith('https://github.com')) {
-            authenticatedUrl = repoUrl.replace('https://github.com', `https://${ghToken}@github.com`);
+            authenticatedUrl = repoUrl.replace(
+              'https://github.com',
+              `https://${ghToken}@github.com`
+            );
           } else if (repoUrl.startsWith('http://github.com')) {
-            authenticatedUrl = repoUrl.replace('http://github.com', `https://${ghToken}@github.com`);
+            authenticatedUrl = repoUrl.replace(
+              'http://github.com',
+              `https://${ghToken}@github.com`
+            );
           } else if (!repoUrl.startsWith('http')) {
             // Handle github.com/user/repo format
             authenticatedUrl = `https://${ghToken}@${repoUrl}`;
           }
           cloneCommand = `git clone ${authenticatedUrl} ${targetPath}`;
-          console.log(`[Clone] Using authenticated GitHub clone`);
+          console.log('[Clone] Using authenticated GitHub clone');
         }
 
         await execAsync(cloneCommand);
@@ -170,19 +177,19 @@ Session:
         const codebase = await codebaseDb.createCodebase({
           name: repoName,
           repository_url: repoUrl,
-          default_cwd: targetPath
+          default_cwd: targetPath,
         });
 
         await db.updateConversation(conversation.id, {
           codebase_id: codebase.id,
-          cwd: targetPath
+          cwd: targetPath,
         });
 
         // Reset session when cloning a new repository
         const session = await sessionDb.getActiveSession(conversation.id);
         if (session) {
           await sessionDb.deactivateSession(session.id);
-          console.log(`[Command] Deactivated session after clone`);
+          console.log('[Command] Deactivated session after clone');
         }
 
         // Detect command folders
@@ -192,7 +199,9 @@ Session:
             await access(join(targetPath, folder));
             commandFolder = folder;
             break;
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
 
         let responseMessage = `Repository cloned successfully!\n\nCodebase: ${repoName}\nPath: ${targetPath}\n\nSession reset - starting fresh on next message.\n\nYou can now start asking questions about the code.`;
@@ -204,14 +213,14 @@ Session:
         return {
           success: true,
           message: responseMessage,
-          modified: true
+          modified: true,
         };
       } catch (error) {
         const err = error as Error;
         console.error('[Clone] Failed:', err);
         return {
           success: false,
-          message: `Failed to clone repository: ${err.message}`
+          message: `Failed to clone repository: ${err.message}`,
         };
       }
     }
@@ -236,11 +245,11 @@ Session:
         }
         await codebaseDb.registerCommand(conversation.codebase_id, commandName, {
           path: commandPath,
-          description: `Custom: ${commandName}`
+          description: `Custom: ${commandName}`,
         });
         return {
           success: true,
-          message: `Command '${commandName}' registered!\nPath: ${commandPath}`
+          message: `Command '${commandName}' registered!\nPath: ${commandPath}`,
         };
       } catch (error) {
         const err = error as Error;
@@ -270,14 +279,14 @@ Session:
         files.forEach(file => {
           commands[basename(file, '.md')] = {
             path: join(folderPath, file),
-            description: `From ${folderPath}`
+            description: `From ${folderPath}`,
           };
         });
         await codebaseDb.updateCodebaseCommands(conversation.codebase_id, commands);
 
         return {
           success: true,
-          message: `Loaded ${files.length} commands: ${files.map(f => basename(f, '.md')).join(', ')}`
+          message: `Loaded ${files.length} commands: ${files.map(f => basename(f, '.md')).join(', ')}`,
         };
       } catch (error) {
         const err = error as Error;
@@ -297,11 +306,11 @@ Session:
       if (!Object.keys(commands).length) {
         return {
           success: true,
-          message: `No commands registered.\n\nUse /command-set or /load-commands.`
+          message: 'No commands registered.\n\nUse /command-set or /load-commands.',
         };
       }
 
-      let msg = `Registered Commands:\n\n`;
+      let msg = 'Registered Commands:\n\n';
       for (const [name, def] of Object.entries(commands)) {
         msg += `${name} - ${def.path}\n`;
       }
@@ -313,14 +322,12 @@ Session:
 
       try {
         const entries = await readdir(workspacePath, { withFileTypes: true });
-        const folders = entries
-          .filter(entry => entry.isDirectory())
-          .map(entry => entry.name);
+        const folders = entries.filter(entry => entry.isDirectory()).map(entry => entry.name);
 
         if (!folders.length) {
           return {
             success: true,
-            message: 'No repositories found in /workspace'
+            message: 'No repositories found in /workspace',
           };
         }
 
@@ -347,19 +354,20 @@ Session:
         await sessionDb.deactivateSession(session.id);
         return {
           success: true,
-          message: 'Session cleared. Starting fresh on next message.\n\nCodebase configuration preserved.'
+          message:
+            'Session cleared. Starting fresh on next message.\n\nCodebase configuration preserved.',
         };
       }
       return {
         success: true,
-        message: 'No active session to reset.'
+        message: 'No active session to reset.',
       };
     }
 
     default:
       return {
         success: false,
-        message: `Unknown command: /${command}\n\nType /help to see available commands.`
+        message: `Unknown command: /${command}\n\nType /help to see available commands.`,
       };
   }
 }

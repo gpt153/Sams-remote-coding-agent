@@ -31,7 +31,7 @@ export interface Session {
   ai_assistant_type: string;
   assistant_session_id: string | null;
   active: boolean;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   started_at: Date;
   ended_at: Date | null;
 }
@@ -78,7 +78,7 @@ export interface MessageChunk {
 
   // For tool calls
   toolName?: string;
-  toolInput?: Record<string, any>;
+  toolInput?: Record<string, unknown>;
 }
 
 /**
@@ -92,11 +92,7 @@ export interface IAssistantClient {
    * @param cwd - Working directory for the assistant
    * @param resumeSessionId - Optional session ID to resume
    */
-  sendQuery(
-    prompt: string,
-    cwd: string,
-    resumeSessionId?: string
-  ): AsyncGenerator<MessageChunk>;
+  sendQuery(prompt: string, cwd: string, resumeSessionId?: string): AsyncGenerator<MessageChunk>;
 
   /**
    * Get the assistant type identifier

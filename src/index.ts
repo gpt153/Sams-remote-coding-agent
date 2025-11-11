@@ -27,7 +27,9 @@ async function main(): Promise<void> {
 
   // Validate Claude credentials (API key or OAuth token)
   if (!process.env.CLAUDE_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    console.error('[App] Missing Claude credentials. Set either CLAUDE_API_KEY or CLAUDE_CODE_OAUTH_TOKEN');
+    console.error(
+      '[App] Missing Claude credentials. Set either CLAUDE_API_KEY or CLAUDE_CODE_OAUTH_TOKEN'
+    );
     process.exit(1);
   }
 
@@ -60,7 +62,7 @@ async function main(): Promise<void> {
     try {
       await pool.query('SELECT 1');
       res.json({ status: 'ok', database: 'connected' });
-    } catch (error) {
+    } catch (_error) {
       res.status(500).json({ status: 'error', database: 'disconnected' });
     }
   });
@@ -106,7 +108,7 @@ async function main(): Promise<void> {
   const telegram = new TelegramAdapter(process.env.TELEGRAM_BOT_TOKEN!, streamingMode);
 
   // Handle text messages
-  telegram.getBot().on('text', async (ctx) => {
+  telegram.getBot().on('text', async ctx => {
     const conversationId = telegram.getConversationId(ctx);
     const message = ctx.message.text;
 
@@ -137,7 +139,7 @@ async function main(): Promise<void> {
 }
 
 // Run the application
-main().catch((error) => {
+main().catch(error => {
   console.error('[App] Fatal error:', error);
   process.exit(1);
 });

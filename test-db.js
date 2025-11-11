@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 1
+  max: 1,
 });
 
 async function test() {

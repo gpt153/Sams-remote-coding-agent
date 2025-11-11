@@ -25,10 +25,10 @@ export async function createSession(data: {
 }
 
 export async function updateSession(id: string, sessionId: string): Promise<void> {
-  await pool.query(
-    'UPDATE remote_agent_sessions SET assistant_session_id = $1 WHERE id = $2',
-    [sessionId, id]
-  );
+  await pool.query('UPDATE remote_agent_sessions SET assistant_session_id = $1 WHERE id = $2', [
+    sessionId,
+    id,
+  ]);
 }
 
 export async function deactivateSession(id: string): Promise<void> {
@@ -40,7 +40,7 @@ export async function deactivateSession(id: string): Promise<void> {
 
 export async function updateSessionMetadata(
   id: string,
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 ): Promise<void> {
   await pool.query(
     'UPDATE remote_agent_sessions SET metadata = metadata || $1::jsonb WHERE id = $2',

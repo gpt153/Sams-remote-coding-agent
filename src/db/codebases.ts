@@ -17,10 +17,9 @@ export async function createCodebase(data: {
 }
 
 export async function getCodebase(id: string): Promise<Codebase | null> {
-  const result = await pool.query<Codebase>(
-    'SELECT * FROM remote_agent_codebases WHERE id = $1',
-    [id]
-  );
+  const result = await pool.query<Codebase>('SELECT * FROM remote_agent_codebases WHERE id = $1', [
+    id,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -37,10 +36,9 @@ export async function updateCodebaseCommands(
 export async function getCodebaseCommands(
   id: string
 ): Promise<Record<string, { path: string; description: string }>> {
-  const result = await pool.query<{ commands: Record<string, any> }>(
-    'SELECT commands FROM remote_agent_codebases WHERE id = $1',
-    [id]
-  );
+  const result = await pool.query<{
+    commands: Record<string, { path: string; description: string }>;
+  }>('SELECT commands FROM remote_agent_codebases WHERE id = $1', [id]);
   return result.rows[0]?.commands || {};
 }
 

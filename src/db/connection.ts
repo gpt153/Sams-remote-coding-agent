@@ -11,6 +11,6 @@ export const pool = new Pool({
 });
 
 // Handle pool errors
-pool.on('error', (err) => {
+pool.on('error', err => {
   console.error('[Database] Unexpected error on idle client', err);
 });

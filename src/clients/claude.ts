@@ -5,6 +5,14 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { IAssistantClient, MessageChunk } from '../types';
 
+interface ClaudeQueryOptions {
+  cwd: string;
+  env: Record<string, string | undefined>;
+  permissionMode: 'bypassPermissions' | 'prompt' | 'deny';
+  stderr: (data: string) => void;
+  resume?: string;
+}
+
 /**
  * Claude AI assistant client
  * Implements generic IAssistantClient interface
@@ -21,16 +29,16 @@ export class ClaudeClient implements IAssistantClient {
     cwd: string,
     resumeSessionId?: string
   ): AsyncGenerator<MessageChunk> {
-    const options: any = {
+    const options: ClaudeQueryOptions = {
       cwd,
       env: {
         PATH: process.env.PATH,
-        ...process.env
+        ...process.env,
       },
-      permissionMode: 'bypassPermissions',  // YOLO mode - auto-approve all tools
-      stderr: (data: Buffer) => {
+      permissionMode: 'bypassPermissions', // YOLO mode - auto-approve all tools
+      stderr: (data: string) => {
         // Capture and log Claude Code stderr - but filter out informational messages
-        const output = data.toString().trim();
+        const output = data.trim();
         if (!output) return;
 
         // Only log actual errors, not informational messages
@@ -40,7 +48,7 @@ export class ClaudeClient implements IAssistantClient {
           output.toLowerCase().includes('fatal') ||
           output.toLowerCase().includes('failed') ||
           output.toLowerCase().includes('exception') ||
-          output.includes('at ') ||  // Stack trace lines
+          output.includes('at ') || // Stack trace lines
           output.includes('Error:');
 
         const isInfoMessage =
@@ -51,7 +59,7 @@ export class ClaudeClient implements IAssistantClient {
         if (isError && !isInfoMessage) {
           console.error(`[Claude stderr] ${output}`);
         }
-      }
+      },
     };
 
     if (resumeSessionId) {
@@ -62,7 +70,8 @@ export class ClaudeClient implements IAssistantClient {
     }
 
     try {
-      for await (const msg of query({ prompt, options })) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for await (const msg of query({ prompt, options: options as any })) {
         if (msg.type === 'assistant') {
           // Process assistant message content blocks
           const message = msg.message;
@@ -78,7 +87,7 @@ export class ClaudeClient implements IAssistantClient {
               yield {
                 type: 'tool',
                 toolName: block.name,
-                toolInput: block.input || {}
+                toolInput: block.input || {},
               };
             }
           }

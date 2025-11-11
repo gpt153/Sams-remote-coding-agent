@@ -30,7 +30,7 @@ export async function updateConversation(
   updates: Partial<Pick<Conversation, 'codebase_id' | 'cwd'>>
 ): Promise<void> {
   const fields: string[] = [];
-  const values: any[] = [];
+  const values: (string | null)[] = [];
   let i = 1;
 
   if (updates.codebase_id !== undefined) {

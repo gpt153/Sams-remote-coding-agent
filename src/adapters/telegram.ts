@@ -15,7 +15,7 @@ export class TelegramAdapter implements IPlatformAdapter {
     // Disable handler timeout to support long-running AI operations
     // Default is 90 seconds which is too short for complex coding tasks
     this.bot = new Telegraf(token, {
-      handlerTimeout: Infinity
+      handlerTimeout: Infinity,
     });
     this.streamingMode = mode;
     console.log(`[Telegram] Adapter initialized (mode: ${mode}, timeout: disabled)`);
@@ -85,7 +85,7 @@ export class TelegramAdapter implements IPlatformAdapter {
     // Drop pending updates on startup to prevent reprocessing messages after container restart
     // This ensures a clean slate - old unprocessed messages won't be handled
     await this.bot.launch({
-      dropPendingUpdates: true
+      dropPendingUpdates: true,
     });
     console.log('[Telegram] Bot started (polling mode, pending updates dropped)');
   }

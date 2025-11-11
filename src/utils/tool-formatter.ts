@@ -12,7 +12,7 @@
  * @param toolInput - Input parameters for the tool
  * @returns Formatted tool message with emoji and brief description
  */
-export function formatToolCall(toolName: string, toolInput?: Record<string, any>): string {
+export function formatToolCall(toolName: string, toolInput?: Record<string, unknown>): string {
   // Start with tool emoji and name
   let message = `🔧 ${toolName.toUpperCase()}`;
 
@@ -34,7 +34,7 @@ export function formatToolCall(toolName: string, toolInput?: Record<string, any>
  * @param toolInput - Tool input parameters
  * @returns Brief description of what the tool is doing
  */
-function extractBriefInfo(toolName: string, toolInput: Record<string, any>): string | null {
+function extractBriefInfo(toolName: string, toolInput: Record<string, unknown>): string | null {
   // Bash commands - show the command (truncated)
   if (toolName === 'Bash' && toolInput.command) {
     const cmd = toolInput.command as string;
@@ -43,27 +43,27 @@ function extractBriefInfo(toolName: string, toolInput: Record<string, any>): str
 
   // Read operations - show file path
   if (toolName === 'Read' && toolInput.file_path) {
-    return `Reading: ${toolInput.file_path}`;
+    return `Reading: ${toolInput.file_path as string}`;
   }
 
   // Write operations - show file path
   if (toolName === 'Write' && toolInput.file_path) {
-    return `Writing: ${toolInput.file_path}`;
+    return `Writing: ${toolInput.file_path as string}`;
   }
 
   // Edit operations - show file path
   if (toolName === 'Edit' && toolInput.file_path) {
-    return `Editing: ${toolInput.file_path}`;
+    return `Editing: ${toolInput.file_path as string}`;
   }
 
   // Glob operations - show pattern
   if (toolName === 'Glob' && toolInput.pattern) {
-    return `Pattern: ${toolInput.pattern}`;
+    return `Pattern: ${toolInput.pattern as string}`;
   }
 
   // Grep operations - show pattern
   if (toolName === 'Grep' && toolInput.pattern) {
-    return `Searching: ${toolInput.pattern}`;
+    return `Searching: ${toolInput.pattern as string}`;
   }
 
   // MCP tools - show tool name

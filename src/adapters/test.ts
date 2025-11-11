@@ -12,7 +12,7 @@ interface TestMessage {
 }
 
 export class TestAdapter implements IPlatformAdapter {
-  private messages: Map<string, TestMessage[]> = new Map();
+  private messages = new Map<string, TestMessage[]>();
   private streamingMode: 'stream' | 'batch' = 'stream';
 
   async sendMessage(conversationId: string, message: string): Promise<void> {
@@ -26,7 +26,7 @@ export class TestAdapter implements IPlatformAdapter {
       conversationId,
       message,
       timestamp: new Date(),
-      direction: 'sent'
+      direction: 'sent',
     });
   }
 
@@ -54,7 +54,7 @@ export class TestAdapter implements IPlatformAdapter {
       conversationId,
       message,
       timestamp: new Date(),
-      direction: 'received'
+      direction: 'received',
     });
   }
 

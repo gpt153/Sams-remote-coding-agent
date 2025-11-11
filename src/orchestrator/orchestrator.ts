@@ -68,7 +68,10 @@ export async function handleMessage(
 
       const commandDef = codebase.commands[commandName];
       if (!commandDef) {
-        await platform.sendMessage(conversationId, `Command '${commandName}' not found. Use /commands to see available.`);
+        await platform.sendMessage(
+          conversationId,
+          `Command '${commandName}' not found. Use /commands to see available.`
+        );
         return;
       }
 
@@ -96,7 +99,7 @@ export async function handleMessage(
       }
     }
 
-    console.log(`[Orchestrator] Starting AI conversation`);
+    console.log('[Orchestrator] Starting AI conversation');
 
     // Get or create session (handle plan→execute transition)
     let session = await sessionDb.getActiveSession(conversation.id);
@@ -107,7 +110,7 @@ export async function handleMessage(
     const needsNewSession = commandName === 'execute' && session?.metadata?.lastCommand === 'plan';
 
     if (needsNewSession) {
-      console.log(`[Orchestrator] Plan→Execute transition: creating new session`);
+      console.log('[Orchestrator] Plan→Execute transition: creating new session');
 
       if (session) {
         await sessionDb.deactivateSession(session.id);
@@ -115,13 +118,13 @@ export async function handleMessage(
 
       session = await sessionDb.createSession({
         conversation_id: conversation.id,
-        codebase_id: conversation.codebase_id
+        codebase_id: conversation.codebase_id,
       });
     } else if (!session) {
-      console.log(`[Orchestrator] Creating new session`);
+      console.log('[Orchestrator] Creating new session');
       session = await sessionDb.createSession({
         conversation_id: conversation.id,
-        codebase_id: conversation.codebase_id
+        codebase_id: conversation.codebase_id,
       });
     } else {
       console.log(`[Orchestrator] Resuming session ${session.id}`);
@@ -133,7 +136,11 @@ export async function handleMessage(
 
     if (mode === 'stream') {
       // Stream mode: Send each chunk immediately
-      for await (const msg of aiClient.sendQuery(promptToSend, cwd, session.assistant_session_id || undefined)) {
+      for await (const msg of aiClient.sendQuery(
+        promptToSend,
+        cwd,
+        session.assistant_session_id || undefined
+      )) {
         if (msg.type === 'assistant' && msg.content) {
           await platform.sendMessage(conversationId, msg.content);
         } else if (msg.type === 'tool' && msg.toolName) {
@@ -148,7 +155,11 @@ export async function handleMessage(
     } else {
       // Batch mode: Accumulate chunks, send final response
       const buffer: string[] = [];
-      for await (const msg of aiClient.sendQuery(promptToSend, cwd, session.assistant_session_id || undefined)) {
+      for await (const msg of aiClient.sendQuery(
+        promptToSend,
+        cwd,
+        session.assistant_session_id || undefined
+      )) {
         if (msg.type === 'assistant' && msg.content) {
           buffer.push(msg.content);
         } else if (msg.type === 'tool' && msg.toolName) {
@@ -170,7 +181,7 @@ export async function handleMessage(
       await sessionDb.updateSessionMetadata(session.id, { lastCommand: commandName });
     }
 
-    console.log(`[Orchestrator] Message handling complete`);
+    console.log('[Orchestrator] Message handling complete');
   } catch (error) {
     console.error('[Orchestrator] Error:', error);
     await platform.sendMessage(

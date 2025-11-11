@@ -14,7 +14,7 @@
 export function substituteVariables(
   text: string,
   args: string[],
-  _metadata: Record<string, any> = {}
+  _metadata: Record<string, unknown> = {}
 ): string {
   let result = text;
 
