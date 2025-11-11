@@ -54,6 +54,7 @@ Command Management:
 
 Codebase:
   /clone <repo-url> - Clone repository
+  /repos - List workspace repositories
   /getcwd - Show working directory
   /setcwd <path> - Set directory
 
@@ -305,6 +306,39 @@ Session:
         msg += `${name} - ${def.path}\n`;
       }
       return { success: true, message: msg };
+    }
+
+    case 'repos': {
+      const workspacePath = '/workspace';
+
+      try {
+        const entries = await readdir(workspacePath, { withFileTypes: true });
+        const folders = entries
+          .filter(entry => entry.isDirectory())
+          .map(entry => entry.name);
+
+        if (!folders.length) {
+          return {
+            success: true,
+            message: 'No repositories found in /workspace'
+          };
+        }
+
+        const currentCwd = conversation.cwd || '';
+        let msg = 'Workspace Repositories:\n\n';
+
+        folders.forEach(folder => {
+          const folderPath = join(workspacePath, folder);
+          const isActive = currentCwd.startsWith(folderPath);
+          msg += `${folderPath}${isActive ? ' [active]' : ''}\n`;
+        });
+
+        return { success: true, message: msg };
+      } catch (error) {
+        const err = error as Error;
+        console.error('[Command] repos failed:', err);
+        return { success: false, message: `Failed to list repositories: ${err.message}` };
+      }
     }
 
     case 'reset': {

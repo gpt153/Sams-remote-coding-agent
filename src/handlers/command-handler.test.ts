@@ -76,5 +76,11 @@ describe('CommandHandler', () => {
       expect(result.command).toBe('command-invoke');
       expect(result.args).toEqual(['plan', 'Add dark mode']);
     });
+
+    test('should parse /repos', () => {
+      const result = parseCommand('/repos');
+      expect(result.command).toBe('repos');
+      expect(result.args).toEqual([]);
+    });
   });
 });
