@@ -75,7 +75,10 @@ export interface MessageChunk {
   type: 'assistant' | 'result' | 'system' | 'tool' | 'thinking';
   content?: string;
   sessionId?: string;
+
+  // For tool calls
   toolName?: string;
+  toolInput?: Record<string, any>;
 }
 
 /**

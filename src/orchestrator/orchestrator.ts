@@ -7,6 +7,7 @@ import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import * as commandHandler from '../handlers/command-handler';
+import { formatToolCall } from '../utils/tool-formatter';
 
 export async function handleMessage(
   platform: IPlatformAdapter,
@@ -68,6 +69,10 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(message, cwd, session.assistant_session_id || undefined)) {
         if (msg.type === 'assistant' && msg.content) {
           await platform.sendMessage(conversationId, msg.content);
+        } else if (msg.type === 'tool' && msg.toolName) {
+          // Format and send tool call notification
+          const toolMessage = formatToolCall(msg.toolName, msg.toolInput);
+          await platform.sendMessage(conversationId, toolMessage);
         } else if (msg.type === 'result' && msg.sessionId) {
           // Save session ID for resume
           await sessionDb.updateSession(session.id, msg.sessionId);
@@ -79,13 +84,17 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(message, cwd, session.assistant_session_id || undefined)) {
         if (msg.type === 'assistant' && msg.content) {
           buffer.push(msg.content);
+        } else if (msg.type === 'tool' && msg.toolName) {
+          // Format and add tool call notification to buffer
+          const toolMessage = formatToolCall(msg.toolName, msg.toolInput);
+          buffer.push(toolMessage);
         } else if (msg.type === 'result' && msg.sessionId) {
           await sessionDb.updateSession(session.id, msg.sessionId);
         }
       }
 
       if (buffer.length > 0) {
-        await platform.sendMessage(conversationId, buffer.join(''));
+        await platform.sendMessage(conversationId, buffer.join('\n\n'));
       }
     }
 

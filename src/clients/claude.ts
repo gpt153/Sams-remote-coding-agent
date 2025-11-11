@@ -39,21 +39,29 @@ export class ClaudeClient implements IAssistantClient {
     try {
       for await (const msg of query({ prompt, options })) {
         if (msg.type === 'assistant') {
-          // Extract text content from assistant message
+          // Process assistant message content blocks
           const message = msg.message;
-          const text = message.content
-            .filter((c: any): c is { type: 'text'; text: string } => c.type === 'text')
-            .map((c: { type: 'text'; text: string }) => c.text)
-            .join('');
 
-          if (text) {
-            yield { type: 'assistant', content: text };
+          for (const block of message.content) {
+            // Text blocks - assistant responses
+            if (block.type === 'text' && block.text) {
+              yield { type: 'assistant', content: block.text };
+            }
+
+            // Tool use blocks - tool calls
+            else if (block.type === 'tool_use') {
+              yield {
+                type: 'tool',
+                toolName: block.name,
+                toolInput: block.input || {}
+              };
+            }
           }
         } else if (msg.type === 'result') {
           // Extract session ID for persistence
           yield { type: 'result', sessionId: msg.session_id };
         }
-        // Ignore other message types (system, thinking, etc.)
+        // Ignore other message types (system, thinking, tool_result, etc.)
       }
     } catch (error) {
       console.error('[Claude] Query error:', error);
