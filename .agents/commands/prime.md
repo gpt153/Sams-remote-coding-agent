@@ -8,6 +8,8 @@ description: Prime agent with codebase understanding for remote GitHub workflow
 
 Build comprehensive understanding of the codebase by analyzing structure, documentation, key files, and GitHub repository state for remote development workflow.
 
+**IMPORTANT: This is an ANALYSIS-ONLY command. Do NOT implement any features, make any code changes, or solve the GitHub issue. Your job is ONLY to analyze the codebase and provide a project overview report.**
+
 ## Process
 
 ### 1. Analyze Project Structure
