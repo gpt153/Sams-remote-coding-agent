@@ -41,3 +41,8 @@ workspace/
 # OS
 .DS_Store
 Thumbs.db
+
+# Integration testing
+.test-repo-name
+.test-repo-url
+.test-issue-number
