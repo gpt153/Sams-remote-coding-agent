@@ -284,6 +284,56 @@ describe('CommandHandler', () => {
 });
 ```
 
+**Manual Validation with Test Adapter:**
+
+The application includes a built-in test adapter (`src/adapters/test.ts`) with HTTP endpoints for programmatic testing without requiring Telegram/Slack setup.
+
+**Test Adapter Endpoints:**
+```bash
+# Send message to bot (triggers full orchestrator flow)
+POST http://localhost:3000/test/message
+Body: {"conversationId": "test-123", "message": "/help"}
+
+# Get bot responses (all messages sent by bot)
+GET http://localhost:3000/test/messages/test-123
+
+# Clear conversation history
+DELETE http://localhost:3000/test/messages/test-123
+```
+
+**Complete Test Workflow:**
+```bash
+# 1. Start application
+docker-compose up -d
+# Wait for startup (check logs)
+docker-compose logs -f app
+
+# 2. Send test message
+curl -X POST http://localhost:3000/test/message \
+  -H "Content-Type: application/json" \
+  -d '{"conversationId":"test-123","message":"/status"}'
+
+# 3. Verify bot response
+curl http://localhost:3000/test/messages/test-123 | jq
+
+# 4. Clean up
+curl -X DELETE http://localhost:3000/test/messages/test-123
+```
+
+**Test Adapter Features:**
+- Implements `IPlatformAdapter` (same interface as Telegram/Slack)
+- In-memory message storage (no external dependencies)
+- Tracks message direction (sent by bot vs received from user)
+- Full orchestrator integration (real AI, real database)
+- Useful for feature validation, debugging, and CI/CD integration
+
+**When to Use Test Adapter:**
+- ✅ Manual validation after implementing new features
+- ✅ End-to-end testing of command flows
+- ✅ Debugging orchestrator logic without Telegram setup
+- ✅ Automated integration tests (future CI/CD)
+- ❌ NOT for unit tests (use Jest mocks instead)
+
 ### Logging
 
 **Use `console.log` with structured data for MVP:**

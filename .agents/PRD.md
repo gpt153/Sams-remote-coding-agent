@@ -857,7 +857,7 @@ Bot: Creating git commit...
 
 ## Out of Scope for MVP
 
-- ❌ Multi-user/multi-tenant support
+- ❌ Multi-user/multi-tenant support (authentication, isolation)
 - ❌ Web dashboard UI
 - ❌ Team features
 - ❌ More than 3 platforms
@@ -866,6 +866,13 @@ Bot: Creating git commit...
 - ❌ Analytics dashboard
 - ❌ Automatic session transitions
 - ❌ Voice interface
+
+## Required for Production (Post-MVP)
+
+- ✅ **Multi-threaded conversation handling** - Currently single-threaded, blocking. MUST implement worker pool or queue system before production use with multiple users.
+- ✅ Rate limiting - Prevent API abuse and quota exhaustion
+- ✅ Retry logic - Handle transient failures gracefully
+- ✅ Monitoring - Observability into performance and errors
 
 ---
 
@@ -882,6 +889,19 @@ Bot: Creating git commit...
 ### Webhook Reliability
 **Risk:** GitHub webhooks fail or timeout
 **Mitigation:** Retry logic, event queue, monitoring
+
+### Single-Threaded Blocking (CRITICAL)
+**Risk:** Current implementation is single-threaded - long-running AI operations block all other conversations
+**Impact:** If User A asks a complex question requiring 2 minutes of Claude processing, User B's messages are queued and delayed
+**Required Solution:** Multi-threaded conversation handling
+**Mitigation Strategy:**
+- Worker pool pattern: Process conversations concurrently
+- Queue-based architecture: Redis/BullMQ for conversation queue
+- Multiple Node.js worker processes
+- Database connection pooling (already implemented)
+- Each conversation gets independent execution context
+- Maximum concurrent conversations configurable (e.g., 5-10)
+**Priority:** High - Required before production use with multiple users
 
 ---
 
