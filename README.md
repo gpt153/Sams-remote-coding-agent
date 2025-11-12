@@ -1,497 +1,891 @@
-# Remote Coding Agent - MVP (Telegram + Claude)
+# Dynamous Remote Coding Agent
 
-Control Claude Code remotely from Telegram with persistent sessions, codebase management, and streaming responses.
+Control AI coding assistants (Claude Code, Codex) remotely from Telegram, GitHub, and more. Built for developers who want to code from anywhere with persistent sessions and flexible workflows/systems.
+
+**Quick Start:** [Core Configuration](#1-core-configuration-required) • [AI Assistant Setup](#2-ai-assistant-setup-choose-at-least-one) • [Platform Setup](#3-platform-adapter-setup-choose-at-least-one) • [Start the App](#4-start-the-application) • [Usage Guide](#usage)
 
 ## Features
 
-- **Telegram Integration**: Control Claude from anywhere via Telegram
-- **Claude Agent SDK**: Full access to Claude's coding capabilities
-- **Persistent Sessions**: Sessions survive container restarts
-- **Codebase Management**: Clone and work with GitHub repositories
-- **Streaming Responses**: Real-time or batch message delivery
+- **Multi-Platform Support**: Interact via Telegram, GitHub issues/PRs, and more in the future
+- **Multiple AI Assistants**: Choose between Claude Code or Codex (or both)
+- **Persistent Sessions**: Sessions survive container restarts with full context preservation
+- **Codebase Management**: Clone and work with any GitHub repository
+- **Flexible Streaming**: Real-time or batch message delivery per platform
+- **Generic Command System**: User-defined commands versioned with Git
 - **Docker Ready**: Simple deployment with Docker Compose
 
 ## Prerequisites
 
-- **Node.js 20+** (for local development)
-- **Docker & Docker Compose** (for containerized deployment)
-- **PostgreSQL 18** (managed remotely or via Docker)
-- **GitHub Token** (for cloning repositories)
-- **Telegram Bot Token** (from [@BotFather](https://t.me/BotFather))
-- **Claude API Key** or OAuth Token
+**System Requirements:**
+- Docker & Docker Compose (for deployment)
+- Node.js 20+ (for local development only)
 
-## Quick Start
+**Accounts Required:**
+- GitHub account (for repository cloning via `/clone` command)
+- At least one of: Claude Pro/Max subscription OR Codex account
+- At least one of: Telegram account OR GitHub account (for interaction)
 
-### 1. Create Telegram Bot
+---
 
-1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot` and follow prompts
-3. Save the bot token (looks like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
+## Setup Guide
 
-### 2. Get Claude Authentication
+### 1. Core Configuration (Required)
 
-**Preferred Method: OAuth Token (for Claude Pro/Max subscribers)**
-
-If you have a Claude Pro or Max subscription:
-
+**Create environment file:**
 ```bash
-# Run this command to generate an OAuth token
-claude setup-token
-
-# Copy the generated token - it starts with sk-ant-oat01-...
-```
-
-This generates a `CLAUDE_CODE_OAUTH_TOKEN` that works with your subscription and is ideal for containerized environments.
-
-**Alternative: API Key**
-
-If you don't have a subscription or prefer using API credits:
-
-- Visit [console.anthropic.com](https://console.anthropic.com/)
-- Navigate to API Keys
-- Create a new key (starts with `sk-ant-`)
-- Use this as `CLAUDE_API_KEY`
-
-### 3. Get Codex Authentication (Optional)
-
-If you want to use Codex as your AI assistant:
-
-```bash
-# Login to Codex CLI
-codex login
-
-# Copy credentials from auth file
-# On Linux/Mac:
-cat ~/.codex/auth.json
-
-# On Windows:
-type %USERPROFILE%\.codex\auth.json
-
-# Copy the values to your .env file:
-# - idToken → CODEX_ID_TOKEN
-# - accessToken → CODEX_ACCESS_TOKEN
-# - refreshToken → CODEX_REFRESH_TOKEN
-# - accountId → CODEX_ACCOUNT_ID
-```
-
-**Using Multiple AI Assistants**
-
-- **Claude**: Default assistant, works with `.claude/commands/` folders
-- **Codex**: Auto-detected when cloning repos with `.codex/` folders
-- **Switching**: Assistant type is set per codebase and locked at conversation start
-- **Environment Default**: Set `DEFAULT_AI_ASSISTANT=codex` to prefer Codex for new conversations
-
-### 4. Environment Setup
-
-```bash
-# Copy example environment file
 cp .env.example .env
-
-# Edit .env with your credentials
-nano .env
 ```
 
-Required variables in `.env`:
+**Set these required variables:**
+
+| Variable | Purpose | How to Get |
+|----------|---------|------------|
+| `DATABASE_URL` | PostgreSQL connection | See database options below |
+| `GH_TOKEN` | Repository cloning | [Generate token](https://github.com/settings/tokens) with `repo` scope |
+| `GITHUB_TOKEN` | Same as `GH_TOKEN` | Use same token value |
+| `PORT` | HTTP server port | Default: `3000` (optional) |
+| `WORKSPACE_PATH` | Clone destination | Default: `./workspace` (optional) |
+
+**GitHub Personal Access Token Setup:**
+
+1. Visit [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
+2. Click "Generate new token (classic)"
+3. Select scopes: **`repo`** (full control of private repositories)
+4. Copy token (starts with `ghp_...`)
+5. Set both `GH_TOKEN` and `GITHUB_TOKEN` to this value
 
 ```env
-# Database
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
-
-# Claude - Preferred: OAuth token from `claude setup-token`
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-# OR use API key (if no subscription)
-# CLAUDE_API_KEY=sk-ant-...
-
-# GitHub (for /clone command)
-GH_TOKEN=ghp_...
-
-# Telegram
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_STREAMING_MODE=stream  # stream | batch
-
-# Optional
-WORKSPACE_PATH=./workspace
-PORT=3000
+# .env
+GH_TOKEN=ghp_your_token_here
+GITHUB_TOKEN=ghp_your_token_here  # Same value
 ```
 
-### 4. Setup Database Tables
+**Database Setup - Choose One:**
 
-Run the migration script to create the required tables:
+<details>
+<summary><b>Option A: Remote PostgreSQL (Supabase, Neon, AWS RDS, etc.)</b></summary>
+
+Set your remote connection string:
+
+```env
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+```
+
+Run migrations manually after first startup:
 
 ```bash
-# If using Docker Compose with-db profile (local PostgreSQL)
-docker-compose --profile with-db up -d postgres
-docker-compose exec postgres psql -U postgres -d remote_coding_agent -f /docker-entrypoint-initdb.d/001_initial_schema.sql
-
-# If using remote PostgreSQL
-psql $DATABASE_URL -f migrations/001_initial_schema.sql
+# Download the migration file or use psql directly
+psql $DATABASE_URL < migrations/001_initial_schema.sql
 ```
 
-This creates 3 tables with the `remote_agent_` prefix:
+This creates 3 tables:
 - `remote_agent_codebases` - Repository metadata
 - `remote_agent_conversations` - Platform conversation tracking
 - `remote_agent_sessions` - AI session management
 
-### 5. Start with Docker Compose
+</details>
 
-**Option A: With local PostgreSQL** (recommended for getting started)
+<details>
+<summary><b>Option B: Local PostgreSQL (via Docker)</b></summary>
 
-```bash
-docker-compose --profile with-db up -d --build
+Use the `with-db` profile for automatic PostgreSQL setup:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
 ```
 
-**Option B: With remote PostgreSQL**
+Database will be created automatically when you start with `docker-compose --profile with-db`.
+
+</details>
+
+---
+
+### 2. AI Assistant Setup (Choose At Least One)
+
+You must configure **at least one** AI assistant. Both can be configured if desired.
+
+<details>
+<summary><b>🤖 Claude Code</b></summary>
+
+**Recommended for Claude Pro/Max subscribers.**
+
+**Get OAuth Token (Preferred Method):**
 
 ```bash
-# Set DATABASE_URL to your remote Postgres instance
+# Install Claude Code CLI first: https://docs.claude.com/claude-code/installation
+claude setup-token
+
+# Copy the token starting with sk-ant-oat01-...
+```
+
+**Set environment variable:**
+
+```env
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxxxx
+```
+
+**Alternative: API Key** (if you prefer pay-per-use credits):
+
+1. Visit [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+2. Create a new key (starts with `sk-ant-`)
+3. Set environment variable:
+
+```env
+CLAUDE_API_KEY=sk-ant-xxxxx
+```
+
+**Set as default assistant (optional):**
+
+If you want Claude to be the default AI assistant for new conversations without codebase context, set this environment variable:
+
+```env
+DEFAULT_AI_ASSISTANT=claude
+```
+
+</details>
+
+<details>
+<summary><b>🤖 Codex</b></summary>
+
+**Authenticate with Codex CLI:**
+
+```bash
+# Install Codex CLI first: https://docs.codex.com/installation
+codex login
+
+# Follow browser authentication flow
+```
+
+**Extract credentials from auth file:**
+
+On Linux/Mac:
+```bash
+cat ~/.codex/auth.json
+```
+
+On Windows:
+```cmd
+type %USERPROFILE%\.codex\auth.json
+```
+
+**Set all four environment variables:**
+
+```env
+CODEX_ID_TOKEN=eyJhbGc...
+CODEX_ACCESS_TOKEN=eyJhbGc...
+CODEX_REFRESH_TOKEN=rt_...
+CODEX_ACCOUNT_ID=6a6a7ba6-...
+```
+
+**Set as default assistant (optional):**
+
+If you want Codex to be the default AI assistant for new conversations without codebase context, set this environment variable:
+
+```env
+DEFAULT_AI_ASSISTANT=codex
+```
+
+</details>
+
+**How Assistant Selection Works:**
+- Assistant type is set per codebase (auto-detected from `.claude/commands/` or `.codex/` folders)
+- Once a conversation starts, the assistant type is locked for that conversation
+- `DEFAULT_AI_ASSISTANT` (optional) is used only for new conversations without codebase context
+
+---
+
+### 3. Platform Adapter Setup (Choose At Least One)
+
+You must configure **at least one** platform to interact with your AI assistant.
+
+<details>
+<summary><b>💬 Telegram</b></summary>
+
+**Create Telegram Bot:**
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` and follow the prompts
+3. Copy the bot token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+
+**Set environment variable:**
+
+```env
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
+```
+
+**Configure streaming mode (optional):**
+
+```env
+TELEGRAM_STREAMING_MODE=stream  # stream (default) | batch
+```
+
+**Streaming behavior:**
+- **`stream`** (default): Messages sent in real-time as AI generates responses
+- **`batch`**: Only the final summary message is sent at completion
+
+Use `stream` for interactive chat experience.
+
+</details>
+
+<details>
+<summary><b>🐙 GitHub Webhooks</b></summary>
+
+**Requirements:**
+- GitHub repository with issues enabled
+- `GITHUB_TOKEN` already set in Core Configuration above
+- Public endpoint for webhooks (see ngrok setup below for local development)
+
+**Step 1: Generate Webhook Secret**
+
+On Linux/Mac:
+```bash
+openssl rand -hex 32
+```
+
+On Windows (PowerShell):
+```powershell
+-join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+```
+
+Save this secret - you'll need it for steps 3 and 4.
+
+**Step 2: Expose Local Server (Development Only)**
+
+<details>
+<summary>Using ngrok (Free Tier)</summary>
+
+```bash
+# Install ngrok: https://ngrok.com/download
+# Or: choco install ngrok (Windows)
+# Or: brew install ngrok (Mac)
+
+# Start tunnel
+ngrok http 3000
+
+# Copy the HTTPS URL (e.g., https://abc123.ngrok-free.app)
+# ⚠️ Free tier URLs change on restart
+```
+
+Keep this terminal open while testing.
+
+</details>
+
+<details>
+<summary>Using Cloudflare Tunnel (Persistent URLs)</summary>
+
+```bash
+# Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+cloudflared tunnel --url http://localhost:3000
+
+# Get persistent URL from Cloudflare dashboard
+```
+
+Persistent URLs survive restarts.
+
+</details>
+
+**For production deployments**, use your deployed server URL (no tunnel needed).
+
+**Step 3: Configure GitHub Webhook**
+
+Go to your repository settings:
+- Navigate to: `https://github.com/owner/repo/settings/hooks`
+- Click "Add webhook"
+- **Note**: For multiple repositories, you'll need to add the webhook to each one individually
+
+**Webhook Configuration:**
+
+| Field | Value |
+|-------|-------|
+| **Payload URL** | Local: `https://abc123.ngrok-free.app/webhooks/github`<br>Production: `https://your-domain.com/webhooks/github` |
+| **Content type** | `application/json` |
+| **Secret** | Paste the secret from Step 1 |
+| **SSL verification** | Enable SSL verification (recommended) |
+| **Events** | Select "Let me select individual events":<br>✓ Issues<br>✓ Issue comments<br>✓ Pull requests |
+
+Click "Add webhook" and verify it shows a green checkmark after delivery.
+
+**Step 4: Set Environment Variables**
+
+```env
+WEBHOOK_SECRET=your_secret_from_step_1
+```
+
+**Important**: The `WEBHOOK_SECRET` must match exactly what you entered in GitHub's webhook configuration.
+
+**Step 5: Configure Streaming (Optional)**
+
+```env
+GITHUB_STREAMING_MODE=batch  # batch (default) | stream
+```
+
+**Streaming behavior:**
+- **`batch`** (default, recommended): Only the final summary message is sent as a single comment
+- **`stream`**: Messages sent in real-time as AI works - creates many comments (not recommended)
+
+**Usage:**
+
+Interact by @mentioning your bot in issues or PRs:
+
+```
+@your-bot-name can you analyze this bug?
+@your-bot-name /command-invoke prime
+@your-bot-name review this implementation
+```
+
+**First mention behavior:**
+- Automatically clones the repository to `/workspace`
+- Detects and loads commands from `.claude/commands/` or `.agents/commands/`
+- Injects full issue/PR context for the AI assistant
+
+**Subsequent mentions:**
+- Resumes existing conversation
+- Maintains full context across comments
+
+</details>
+
+---
+
+### 4. Start the Application
+
+Choose the Docker Compose profile based on your database setup:
+
+**Option A: With Remote PostgreSQL**
+
+Starts only the app container (requires `DATABASE_URL` set to remote database):
+
+```bash
+# Start app container
 docker-compose up -d --build
+
+# View logs
+docker-compose logs -f app
 ```
 
+**Option B: With Local PostgreSQL**
 
-## Docker Profiles
-
-### `with-db` Profile
-
-Starts **both** the app and PostgreSQL container.
+Starts both the app and PostgreSQL containers:
 
 ```bash
-docker-compose --profile with-db up -d
+# Start containers
+docker-compose --profile with-db up -d --build
+
+# Wait for startup (watch logs)
+docker-compose logs -f app
+
+# Database tables are created automatically via init script
 ```
 
-Use when:
-- Getting started / testing locally
-- Don't have remote PostgreSQL
-- Want isolated environment
-
-### Default Profile (no profile flag)
-
-Starts **only** the app container.
+**Stop the application:**
 
 ```bash
-docker-compose up -d
+docker-compose down
 ```
 
-Use when:
-- Have remote PostgreSQL (Supabase, Neon, RDS, etc.)
-- Production deployment
-- Want to manage database separately
+---
 
-## Telegram Commands
+## Usage
 
-Once your bot is running, message it on Telegram:
+### Available Commands
+
+Once your platform adapter is running, you can use these commands:
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `/help` | Show available commands | `/help` |
 | `/clone <url>` | Clone a GitHub repository | `/clone https://github.com/user/repo` |
+| `/repos` | List cloned repositories | `/repos` |
 | `/status` | Show conversation state | `/status` |
 | `/getcwd` | Show current working directory | `/getcwd` |
 | `/setcwd <path>` | Change working directory | `/setcwd /workspace/repo` |
+| `/command-set <name> <path>` | Register a custom command | `/command-set analyze .claude/commands/analyze.md` |
+| `/load-commands <folder>` | Bulk load commands from folder | `/load-commands .claude/commands` |
+| `/command-invoke <name> [args]` | Execute custom command | `/command-invoke plan "Add dark mode"` |
+| `/commands` | List registered commands | `/commands` |
 | `/reset` | Clear active session | `/reset` |
 
-## GitHub Integration
+### Example Workflow (Telegram)
 
-### Prerequisites
-
-- GitHub repository with issues enabled
-- GitHub personal access token with `repo` scope
-- Public endpoint for webhooks (ngrok for development, or deployed server)
-
-### Setup
-
-**1. Create GitHub Personal Access Token**
-
-Visit [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
-- Click "Generate new token (classic)"
-- Select scopes: `repo` (full control of private repositories)
-- Copy token (starts with `ghp_...`)
-
-**2. Expose Local Server (for local development)**
-
-If running locally, start ngrok first to get your public URL:
-
-```bash
-# Install ngrok (https://ngrok.com/download)
-# Or: choco install ngrok (Windows)
-# Or: brew install ngrok (Mac)
-
-# Create a tunnel
-ngrok http 3000
-
-# You'll get a URL like: https://abc123.ngrok.io
-# Keep this terminal open and note the URL for step 3
+**🚀 Initial Setup**
 ```
-
-**Note**: Free ngrok URLs change on restart. For persistent URLs, consider ngrok's paid plan or alternatives like Cloudflare Tunnel.
-
-**3. Configure GitHub Webhook**
-
-**For a single repository:**
-- Go to Repository Settings > Webhooks > Add webhook
-- **Note**: For multiple personal repositories, you'll need to add the webhook to each repo individually
-- **Tip**: You can use the same `WEBHOOK_SECRET` for all repositories
-
-**For all repositories in an organization:**
-- Go to Organization Settings > Webhooks > Add webhook
-- This webhook will apply to all current and future repos in the org (one-time setup!)
-
-**Webhook configuration:**
-- **Payload URL**:
-  - **Local dev**: `https://abc123.ngrok.io/webhooks/github` (your ngrok URL from step 2)
-  - **Production**: `https://your-domain.com/webhooks/github`
-- **Content type**: `application/json`
-- **Secret**: Generate a random secret string (e.g., `openssl rand -hex 32`)
-- **Events**: Select "Let me select individual events"
-  - ✓ Issues
-  - ✓ Issue comments
-  - ✓ Pull requests
-- Click "Add webhook"
-- **Save the secret you entered** - you'll need it for step 4
-
-**4. Configure Environment Variables**
-
-```env
-# .env
-GITHUB_TOKEN=ghp_your_token_here
-WEBHOOK_SECRET=your_secret_from_step_3
-```
-
-**Important**: The `WEBHOOK_SECRET` must match exactly what you entered in GitHub's webhook configuration.
-
-**5. Start the Application**
-
-```bash
-docker-compose up -d
-```
-
-### Usage
-
-**Interact with AI by @mentioning in issues or PRs:**
-
-```
-@remote-agent can you analyze this bug?
-@remote-agent /status
-@remote-agent review this implementation
-```
-
-**First mention in an issue/PR**:
-- Automatically clones repository
-- Detects and loads commands from `.claude/commands` or `.agents/commands`
-- Injects issue/PR context for Claude
-
-**Subsequent mentions**:
-- Resumes conversation
-- No context re-injection
-
-**Response Mode**: Batch (single comment, no streaming)
-
-## Usage Example
-
-```
-You: /help
-Bot: Available Commands:
-     /help - Show this help message
-     ...
-
 You: /clone https://github.com/anthropics/anthropic-sdk-typescript
-Bot: Repository cloned successfully!
-     Codebase: anthropic-sdk-typescript
-     Path: /workspace/anthropic-sdk-typescript
 
-     You can now start asking questions about the code.
+Bot: ✅ Repository cloned successfully!
 
+     📁 Codebase: anthropic-sdk-typescript
+     📂 Path: /workspace/anthropic-sdk-typescript
+
+     🔍 Detected .claude/commands/ folder
+
+You: /load-commands .claude/commands
+
+Bot: ✅ Loaded 5 commands:
+     • prime - Research codebase
+     • plan - Create implementation plan
+     • execute - Implement feature
+     • validate - Run validation
+     • commit - Create git commit
+```
+
+**💬 Asking Questions**
+```
 You: What files are in this repo?
-Bot: (Claude streams response analyzing the repository structure)
 
-You: How does error handling work?
-Bot: (Claude analyzes and explains error handling patterns)
+Bot: 📋 Let me analyze the repository structure for you...
 
+     [Claude streams detailed analysis]
+```
+
+**🔧 Working with Commands**
+```
+You: /command-invoke prime
+
+Bot: 🔍 Starting codebase research...
+
+     [Claude analyzes codebase structure, dependencies, patterns]
+
+You: /command-invoke plan "Add retry logic to API calls"
+
+Bot: 📝 Creating implementation plan...
+
+     [Claude creates detailed plan with steps]
+```
+
+**ℹ️ Checking Status**
+```
 You: /status
-Bot: Platform: telegram
-     AI Assistant: claude
 
-     Codebase: anthropic-sdk-typescript
-     Repository: https://github.com/anthropics/anthropic-sdk-typescript
+Bot: 📊 Conversation Status
 
-     Current Working Directory: /workspace/anthropic-sdk-typescript
-     Active Session: a1b2c3d4...
+     🤖 Platform: telegram
+     🧠 AI Assistant: claude
 
+     📦 Codebase: anthropic-sdk-typescript
+     🔗 Repository: https://github.com/anthropics/anthropic-sdk-typescript
+     📂 Working Directory: /workspace/anthropic-sdk-typescript
+
+     🔄 Active Session: a1b2c3d4...
+
+     📋 Registered Commands:
+       • prime - Research codebase
+       • plan - Create implementation plan
+       • execute - Implement feature
+       • validate - Run validation
+       • commit - Create git commit
+```
+
+**🔄 Reset Session**
+```
 You: /reset
-Bot: Session cleared. Starting fresh on next message.
-     Codebase configuration preserved.
+
+Bot: ✅ Session cleared. Starting fresh on next message.
+     📦 Codebase configuration preserved.
 ```
 
-## Health Checks
+### Example Workflow (GitHub)
 
-The application exposes two health check endpoints:
+Create an issue or comment on an existing issue/PR:
 
-```bash
-# Basic health check
-curl http://localhost:3000/health
-# Expected: {"status":"ok"}
-
-# Database connectivity check
-curl http://localhost:3000/health/db
-# Expected: {"status":"ok","database":"connected"}
-
-# View application logs
-docker-compose logs -f app
+```
+@your-bot-name can you help me understand the authentication flow?
 ```
 
-Use these endpoints for:
-- Docker healthcheck configuration
-- Load balancer health checks
-- Monitoring systems
+Bot responds with analysis. Continue the conversation:
 
-## Streaming Modes
+```
+@your-bot-name can you create a sequence diagram for this?
+```
 
-### Stream Mode (Default)
+Bot maintains context and provides the diagram.
 
-Messages are sent immediately as Claude generates them.
+---
 
+## Advanced Configuration
+
+<details>
+<summary><b>Streaming Modes Explained</b></summary>
+
+### Stream Mode
+
+Messages are sent in real-time as the AI generates responses.
+
+**Configuration:**
 ```env
 TELEGRAM_STREAMING_MODE=stream
+GITHUB_STREAMING_MODE=stream
 ```
 
 **Pros:**
-- Real-time feedback
-- Feels more interactive
-- See progress on long tasks
+- Real-time feedback and progress indication
+- More interactive and engaging
+- See AI reasoning as it works
 
 **Cons:**
-- More Telegram API calls
-- Might hit rate limits with very long responses
+- More API calls to platform
+- May hit rate limits with very long responses
+- Creates many messages/comments
+
+**Best for:** Interactive chat platforms (Telegram)
 
 ### Batch Mode
 
-Messages are accumulated and sent as a single final response.
+Only the final summary message is sent after AI completes processing.
 
+**Configuration:**
 ```env
 TELEGRAM_STREAMING_MODE=batch
+GITHUB_STREAMING_MODE=batch
 ```
 
 **Pros:**
+- Single coherent message/comment
 - Fewer API calls
-- Single coherent message
-- Better for short Q&A
+- No spam or clutter
 
 **Cons:**
-- No progress indication
-- Longer wait for first message
+- No progress indication during processing
+- Longer wait for first response
+- Can't see intermediate steps
+
+**Best for:** Issue trackers and async platforms (GitHub)
+
+</details>
+
+<details>
+<summary><b>Concurrency Settings</b></summary>
+
+Control how many conversations the system processes simultaneously:
+
+```env
+MAX_CONCURRENT_CONVERSATIONS=10  # Default: 10
+```
+
+**How it works:**
+- Conversations are processed with a lock manager
+- If max concurrent limit reached, new messages are queued
+- Prevents resource exhaustion and API rate limits
+- Each conversation maintains its own independent context
+
+**Check current load:**
+```bash
+curl http://localhost:3000/health/concurrency
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "active": 3,
+  "queued": 0,
+  "maxConcurrent": 10
+}
+```
+
+**Tuning guidance:**
+- **Low resources**: Set to 3-5
+- **Standard**: Default 10 works well
+- **High resources**: Can increase to 20-30 (monitor API limits)
+
+</details>
+
+<details>
+<summary><b>Health Check Endpoints</b></summary>
+
+The application exposes health check endpoints for monitoring:
+
+**Basic Health Check:**
+```bash
+curl http://localhost:3000/health
+```
+Returns: `{"status":"ok"}`
+
+**Database Connectivity:**
+```bash
+curl http://localhost:3000/health/db
+```
+Returns: `{"status":"ok","database":"connected"}`
+
+**Concurrency Status:**
+```bash
+curl http://localhost:3000/health/concurrency
+```
+Returns: `{"status":"ok","active":0,"queued":0,"maxConcurrent":10}`
+
+**Use cases:**
+- Docker healthcheck configuration
+- Load balancer health checks
+- Monitoring and alerting systems (Prometheus, Datadog, etc.)
+- CI/CD deployment verification
+
+</details>
+
+<details>
+<summary><b>Custom Command System</b></summary>
+
+Create your own commands by adding markdown files to your codebase:
+
+**1. Create command file:**
+```bash
+mkdir -p .claude/commands
+cat > .claude/commands/analyze.md << 'EOF'
+You are an expert code analyzer.
+
+Analyze the following aspect of the codebase: $1
+
+Provide:
+1. Current implementation analysis
+2. Potential issues or improvements
+3. Best practices recommendations
+
+Focus area: $ARGUMENTS
+EOF
+```
+
+**2. Load commands:**
+```
+/load-commands .claude/commands
+```
+
+**3. Invoke your command:**
+```
+/command-invoke analyze "security vulnerabilities"
+```
+
+**Variable substitution:**
+- `$1`, `$2`, `$3`, etc. - Positional arguments
+- `$ARGUMENTS` - All arguments as a single string
+- `$PLAN` - Previous plan from session metadata
+- `$IMPLEMENTATION_SUMMARY` - Previous execution summary
+
+Commands are version-controlled with your codebase, not stored in the database.
+
+</details>
+
+---
 
 ## Architecture
 
+### System Overview
+
 ```
-Telegram Bot (Polling)
-      ↓
-Orchestrator
-      ↓
-   ┌──┴──┐
-   │     │
-Slash   AI
-Commands Messages
-   │     │
-   │     ↓
-   │  Claude SDK
-   │     ↓
-   └──→ PostgreSQL
-         (3 tables)
+┌─────────────────────────────────────────────┐
+│   Platform Adapters (Telegram, GitHub)     │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────┐
+│            Orchestrator                     │
+│   (Message Routing & Context Management)    │
+└──────────────┬──────────────────────────────┘
+               │
+       ┌───────┴────────┐
+       │                │
+       ▼                ▼
+┌─────────────┐  ┌──────────────────┐
+│  Command    │  │  AI Assistant    │
+│  Handler    │  │  Clients         │
+│  (Slash)    │  │  (Claude/Codex)  │
+└─────────────┘  └────────┬─────────┘
+       │                  │
+       └────────┬─────────┘
+                ▼
+┌─────────────────────────────────────────────┐
+│        PostgreSQL (3 Tables)                │
+│  • Codebases  • Conversations  • Sessions   │
+└─────────────────────────────────────────────┘
 ```
+
+### Key Design Patterns
+
+- **Adapter Pattern**: Platform-agnostic via `IPlatformAdapter` interface
+- **Strategy Pattern**: Swappable AI assistants via `IAssistantClient` interface
+- **Session Persistence**: AI context survives restarts via database storage
+- **Generic Commands**: User-defined markdown commands versioned with Git
+- **Concurrency Control**: Lock manager prevents race conditions
 
 ### Database Schema
 
-**3 Tables:**
-- `remote_agent_codebases` - Repository metadata
-- `remote_agent_conversations` - Platform conversation tracking
-- `remote_agent_sessions` - AI session management with resume capability
+**3 tables with `remote_agent_` prefix:**
 
-### Key Files
+1. **`remote_agent_codebases`** - Repository metadata
+   - Commands stored as JSONB: `{command_name: {path, description}}`
+   - AI assistant type per codebase
+   - Default working directory
 
-```
-src/
-├── index.ts              # Entry point
-├── types/index.ts        # TypeScript interfaces
-├── adapters/
-│   └── telegram.ts       # Telegram SDK wrapper
-├── clients/
-│   └── claude.ts         # Claude SDK wrapper
-├── db/
-│   ├── connection.ts     # PostgreSQL pool
-│   ├── conversations.ts  # Conversation queries
-│   ├── codebases.ts      # Codebase queries
-│   └── sessions.ts       # Session queries
-├── handlers/
-│   └── command-handler.ts # Slash command processing
-└── orchestrator/
-    └── orchestrator.ts   # Main message router
-```
+2. **`remote_agent_conversations`** - Platform conversation tracking
+   - Platform type + conversation ID (unique constraint)
+   - Linked to codebase via foreign key
+   - AI assistant type locked at creation
+
+3. **`remote_agent_sessions`** - AI session management
+   - Active session flag (one per conversation)
+   - Session ID for resume capability
+   - Metadata JSONB for command context
+
+---
 
 ## Troubleshooting
 
 ### Bot Not Responding
 
+**Check if application is running:**
 ```bash
-# Check if app is running
 docker-compose ps
+# Should show 'app' with state 'Up'
+```
 
-# Check app logs
+**Check application logs:**
+```bash
 docker-compose logs -f app
+# Look for error messages or startup issues
+```
 
-# Verify bot token
-echo $TELEGRAM_BOT_TOKEN
+**Verify bot token:**
+```bash
+# In your .env file
+cat .env | grep TELEGRAM_BOT_TOKEN
+```
+
+**Test with health check:**
+```bash
+curl http://localhost:3000/health
+# Expected: {"status":"ok"}
 ```
 
 ### Database Connection Errors
 
+**Check database health:**
 ```bash
-# Check database health
 curl http://localhost:3000/health/db
+# Expected: {"status":"ok","database":"connected"}
+```
 
-# Check PostgreSQL logs
+**For local PostgreSQL (`with-db` profile):**
+```bash
+# Check if postgres container is running
+docker-compose ps postgres
+
+# Check postgres logs
 docker-compose logs -f postgres
 
+# Test direct connection
+docker-compose exec postgres psql -U postgres -c "SELECT 1"
+```
+
+**For remote PostgreSQL:**
+```bash
 # Verify DATABASE_URL
 echo $DATABASE_URL
 
-# Test database directly
-docker-compose exec postgres psql -U postgres -c "SELECT 1"
+# Test connection directly
+psql $DATABASE_URL -c "SELECT 1"
+```
+
+**Verify tables exist:**
+```bash
+# For local postgres
+docker-compose exec postgres psql -U postgres -d remote_coding_agent -c "\dt"
+
+# Should show: remote_agent_codebases, remote_agent_conversations, remote_agent_sessions
 ```
 
 ### Clone Command Fails
 
+**Verify GitHub token:**
 ```bash
-# Verify GitHub token
-echo $GH_TOKEN
+cat .env | grep GH_TOKEN
+# Should have both GH_TOKEN and GITHUB_TOKEN set
+```
 
-# Check workspace permissions
+**Test token validity:**
+```bash
+# Test GitHub API access
+curl -H "Authorization: token $GH_TOKEN" https://api.github.com/user
+```
+
+**Check workspace permissions:**
+```bash
 docker-compose exec app ls -la /workspace
+# Should be readable/writable
+```
 
-# Try manual clone
-docker-compose exec app git clone https://github.com/user/repo /workspace/repo
+**Try manual clone:**
+```bash
+docker-compose exec app git clone https://github.com/user/repo /workspace/test-repo
+```
+
+### GitHub Webhook Not Triggering
+
+**Verify webhook delivery:**
+1. Go to your webhook settings in GitHub
+2. Click on the webhook
+3. Check "Recent Deliveries" tab
+4. Look for successful deliveries (green checkmark)
+
+**Check webhook secret:**
+```bash
+cat .env | grep WEBHOOK_SECRET
+# Must match exactly what you entered in GitHub
+```
+
+**Verify ngrok is running (local dev):**
+```bash
+# Check ngrok status
+curl http://localhost:4040/api/tunnels
+# Or visit http://localhost:4040 in browser
+```
+
+**Check application logs for webhook processing:**
+```bash
+docker-compose logs -f app | grep GitHub
 ```
 
 ### TypeScript Compilation Errors
 
+**Clean and rebuild:**
 ```bash
+# Stop containers
+docker-compose down
+
 # Clean build
 rm -rf dist node_modules
 npm install
 npm run build
 
-# Check for type errors
+# Restart
+docker-compose up -d --build
+```
+
+**Check for type errors:**
+```bash
 npm run type-check
 ```
 
 ### Container Won't Start
 
+**Check logs for specific errors:**
 ```bash
-# Check logs for errors
 docker-compose logs app
+```
 
-# Verify environment variables
+**Verify environment variables:**
+```bash
+# Check if .env is properly formatted
 docker-compose config
+```
 
-# Rebuild without cache
+**Rebuild without cache:**
+```bash
 docker-compose build --no-cache
 docker-compose up -d
+```
+
+**Check port conflicts:**
+```bash
+# See if port 3000 is already in use
+# Linux/Mac:
+lsof -i :3000
+
+# Windows:
+netstat -ano | findstr :3000
 ```
