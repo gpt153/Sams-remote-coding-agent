@@ -732,22 +732,22 @@ LIMIT 1;
 \"
 "
 
-# Store conversation ID for later verification
-PRIME_PLAN_CONVERSATION_ID=$(docker exec remote-coding-agent-app-1 sh -c "
+# Store conversation ID for later verification (will be same for prime, plan, and execute)
+COMMAND_WORKFLOW_CONVERSATION_ID=$(docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -t -c \"
 SELECT id FROM remote_agent_conversations
 WHERE platform_conversation_id = '${GITHUB_USERNAME}/${TEST_REPO_NAME}#${COMMAND_ISSUE_NUMBER}'
 ORDER BY created_at DESC LIMIT 1;
 \"" | tr -d ' ')
 
-echo "Prime/Plan Conversation ID: ${PRIME_PLAN_CONVERSATION_ID}"
+echo "Command Workflow Conversation ID: ${COMMAND_WORKFLOW_CONVERSATION_ID}"
 
 # Check active sessions for this conversation
 docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -c \"
 SELECT id, ai_assistant_type, active, started_at
 FROM remote_agent_sessions
-WHERE conversation_id = '${PRIME_PLAN_CONVERSATION_ID}'
+WHERE conversation_id = '${COMMAND_WORKFLOW_CONVERSATION_ID}'
 ORDER BY started_at DESC
 LIMIT 5;
 \"
@@ -919,7 +919,7 @@ cd ../..
 - ✅ Pull request created with comprehensive description
 - ✅ Bot comment on issue with PR URL and completion summary
 
-**CRITICAL: Verify Database - Execute Created New Conversation:**
+**CRITICAL: Verify Database - Session Separation for Execute:**
 ```bash
 # Check ALL conversations for this repository issue
 docker exec remote-coding-agent-app-1 sh -c "
@@ -932,9 +932,10 @@ ORDER BY created_at DESC;
 "
 
 echo ""
-echo "Expected: Should see TWO conversations"
-echo "1. Original conversation (for prime and plan)"
-echo "2. NEW conversation (for execute)"
+echo "Expected: Should see ONE conversation with TWO sessions"
+echo "- Conversation: Tracks GitHub issue #${COMMAND_ISSUE_NUMBER}"
+echo "- Session 1: Prime and plan commands (should be inactive)"
+echo "- Session 2: Execute command (should be active)"
 echo ""
 
 # Count conversations for this issue
@@ -946,14 +947,14 @@ WHERE platform_conversation_id = '${GITHUB_USERNAME}/${TEST_REPO_NAME}#${COMMAND
 
 echo "Total conversations for issue #${COMMAND_ISSUE_NUMBER}: ${CONVERSATION_COUNT}"
 
-if [ "$CONVERSATION_COUNT" -ge 2 ]; then
-  echo "✅ Multiple conversations detected (expected for execute command)"
+if [ "$CONVERSATION_COUNT" -eq 1 ]; then
+  echo "✅ One conversation detected (correct - sessions provide separation)"
 else
-  echo "⚠️  Only ${CONVERSATION_COUNT} conversation(s) found. Execute may have reused conversation."
+  echo "⚠️  Found ${CONVERSATION_COUNT} conversation(s). Expected 1 for GitHub issue."
 fi
 
-# Get the NEWEST conversation (should be from execute)
-EXECUTE_CONVERSATION_ID=$(docker exec remote-coding-agent-app-1 sh -c "
+# Get the conversation ID (should be only one)
+CONVERSATION_ID=$(docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -t -c \"
 SELECT id FROM remote_agent_conversations
 WHERE platform_conversation_id = '${GITHUB_USERNAME}/${TEST_REPO_NAME}#${COMMAND_ISSUE_NUMBER}'
@@ -961,84 +962,107 @@ ORDER BY created_at DESC LIMIT 1;
 \"" | tr -d ' ')
 
 echo ""
-echo "Execute Conversation ID: ${EXECUTE_CONVERSATION_ID}"
-echo "Prime/Plan Conversation ID: ${PRIME_PLAN_CONVERSATION_ID}"
+echo "Conversation ID: ${CONVERSATION_ID}"
 
-# Verify they are different
-if [ "$EXECUTE_CONVERSATION_ID" != "$PRIME_PLAN_CONVERSATION_ID" ]; then
-  echo "✅ Execute created a NEW conversation (correct behavior)"
+# Verify session separation
+echo ""
+echo "=== Verify Session Separation ==="
+docker exec remote-coding-agent-app-1 sh -c "
+psql '$DATABASE_URL' -c \"
+SELECT
+  s.id as session_id,
+  s.active,
+  s.started_at,
+  s.ended_at,
+  CASE
+    WHEN s.ended_at IS NULL THEN 'Active (Execute)'
+    ELSE 'Inactive (Prime/Plan)'
+  END as phase
+FROM remote_agent_sessions s
+JOIN remote_agent_conversations c ON s.conversation_id = c.id
+WHERE c.platform_conversation_id = '${GITHUB_USERNAME}/${TEST_REPO_NAME}#${COMMAND_ISSUE_NUMBER}'
+ORDER BY s.started_at ASC;
+\"
+"
+
+# Count sessions
+SESSION_COUNT=$(docker exec remote-coding-agent-app-1 sh -c "
+psql '$DATABASE_URL' -t -c \"
+SELECT COUNT(*) FROM remote_agent_sessions s
+JOIN remote_agent_conversations c ON s.conversation_id = c.id
+WHERE c.platform_conversation_id = '${GITHUB_USERNAME}/${TEST_REPO_NAME}#${COMMAND_ISSUE_NUMBER}';
+\"" | tr -d ' ')
+
+echo ""
+echo "Total sessions for issue #${COMMAND_ISSUE_NUMBER}: ${SESSION_COUNT}"
+
+if [ "$SESSION_COUNT" -ge 2 ]; then
+  echo "✅ Multiple sessions detected (correct - plan→execute transition creates new session)"
 else
-  echo "❌ Execute reused the same conversation (unexpected)"
+  echo "❌ Only ${SESSION_COUNT} session(s) found. Expected at least 2."
 fi
 
-# Check sessions for BOTH conversations
+# Check all sessions for this conversation
 echo ""
-echo "=== Prime/Plan Conversation Sessions ==="
+echo "=== All Sessions for This Conversation ==="
 docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -c \"
 SELECT id, ai_assistant_type, active, started_at, ended_at
 FROM remote_agent_sessions
-WHERE conversation_id = '${PRIME_PLAN_CONVERSATION_ID}'
-ORDER BY started_at DESC;
+WHERE conversation_id = '${CONVERSATION_ID}'
+ORDER BY started_at ASC;
 \"
 "
 
-echo ""
-echo "=== Execute Conversation Sessions ==="
-docker exec remote-coding-agent-app-1 sh -c "
-psql '$DATABASE_URL' -c \"
-SELECT id, ai_assistant_type, active, started_at, ended_at
-FROM remote_agent_sessions
-WHERE conversation_id = '${EXECUTE_CONVERSATION_ID}'
-ORDER BY started_at DESC;
-\"
-"
-
-# Check if prime/plan sessions are inactive
-PRIME_PLAN_ACTIVE_COUNT=$(docker exec remote-coding-agent-app-1 sh -c "
+# Check if first session (prime/plan) is inactive
+FIRST_SESSION_INACTIVE=$(docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -t -c \"
 SELECT COUNT(*) FROM remote_agent_sessions
-WHERE conversation_id = '${PRIME_PLAN_CONVERSATION_ID}' AND active = true;
+WHERE conversation_id = '${CONVERSATION_ID}'
+  AND ended_at IS NOT NULL
+ORDER BY started_at ASC
+LIMIT 1;
 \"" | tr -d ' ')
 
 echo ""
-echo "Prime/Plan active sessions: ${PRIME_PLAN_ACTIVE_COUNT}"
-
-if [ "$PRIME_PLAN_ACTIVE_COUNT" -eq 0 ]; then
-  echo "✅ Prime/Plan sessions marked as inactive (correct)"
+if [ "$FIRST_SESSION_INACTIVE" -eq 1 ]; then
+  echo "✅ First session (Prime/Plan) marked as inactive (correct)"
 else
-  echo "⚠️  Prime/Plan has ${PRIME_PLAN_ACTIVE_COUNT} active session(s) (may still be in use)"
+  echo "⚠️  First session may still be active (unexpected)"
 fi
 
-# Check if execute sessions are active
-EXECUTE_ACTIVE_COUNT=$(docker exec remote-coding-agent-app-1 sh -c "
+# Check if latest session exists and may be active
+LATEST_SESSION_EXISTS=$(docker exec remote-coding-agent-app-1 sh -c "
 psql '$DATABASE_URL' -t -c \"
 SELECT COUNT(*) FROM remote_agent_sessions
-WHERE conversation_id = '${EXECUTE_CONVERSATION_ID}' AND active = true;
+WHERE conversation_id = '${CONVERSATION_ID}'
+ORDER BY started_at DESC
+LIMIT 1;
 \"" | tr -d ' ')
 
-echo "Execute active sessions: ${EXECUTE_ACTIVE_COUNT}"
-
-if [ "$EXECUTE_ACTIVE_COUNT" -gt 0 ]; then
-  echo "✅ Execute has active session(s)"
+if [ "$LATEST_SESSION_EXISTS" -eq 1 ]; then
+  echo "✅ Latest session (Execute) exists"
 else
-  echo "⚠️  Execute has no active sessions (session may have ended)"
+  echo "⚠️  No latest session found"
 fi
 ```
 
 **Database Validation - Expected Results:**
-- ✅ **TWO conversations exist** for issue #${COMMAND_ISSUE_NUMBER}
-  - First conversation: Used for prime and plan commands
-  - Second conversation: Created by execute command
-- ✅ **Different conversation IDs** (execute doesn't reuse prime/plan conversation)
-- ✅ **Prime/Plan sessions inactive** (ended after plan completed)
-- ✅ **Execute sessions exist** (may be active or ended depending on timing)
-- ✅ **Both conversations link to same codebase**
+- ✅ **ONE conversation exists** for issue #${COMMAND_ISSUE_NUMBER}
+  - Conversation tracks the GitHub issue thread
+  - Multiple sessions within this conversation
+- ✅ **TWO OR MORE sessions** within the conversation
+  - First session: Prime and plan commands (inactive)
+  - Second session: Execute command (may be active or ended)
+- ✅ **Prime/Plan session inactive** (ended_at timestamp set)
+- ✅ **Execute session created** with fresh AI context
+- ✅ **Conversation links to codebase**
 
 **Why this matters:**
-- Execute command should create a **NEW conversation context** for implementation
-- This ensures clean separation between planning and execution phases
-- Previous conversation state doesn't interfere with execution
+- Execute command creates a **NEW SESSION** (not new conversation)
+- Sessions provide **AI context separation** - execute has no memory of prime/plan
+- Conversations track **platform threads** (GitHub issues, Telegram chats)
+- This design matches GitHub's UX: one issue thread, multiple AI interaction phases
 - Proper session lifecycle management (old sessions end, new sessions start)
 
 ### 9.7 Validate PR Quality
@@ -1179,10 +1203,11 @@ Generate comprehensive validation report.
 
 **Command Workflow Database:**
 - ✅/❌ Prime/Plan conversation created
-- ✅/❌ Execute created NEW conversation (not reused)
+- ✅/❌ Execute session separation (NEW session with fresh AI context)
 - ✅/❌ Prime/Plan sessions marked inactive after completion
 - ✅/❌ Execute sessions created successfully
-- ✅/❌ Total: 2 conversations for command workflow issue
+- ✅/❌ Total: 1 conversation for command workflow issue (expected)
+- ✅/❌ Total: 2+ sessions for plan→execute transition (expected)
 
 ### 10.2 Repository Information
 ```bash
@@ -1321,15 +1346,20 @@ rm -rf workspace/${TEST_REPO_NAME}
 The validation extensively tests database state throughout:
 - **Phase 5**: Test adapter conversation and sessions
 - **Phase 9.2**: Prime command creates conversation with active sessions
-- **Phase 9.6**: Execute creates NEW conversation (doesn't reuse prime/plan conversation)
+- **Phase 9.6**: Execute creates NEW SESSION for fresh AI context (reuses same conversation)
 - **Phase 9.6**: Prime/plan sessions become inactive after execute starts
-- **Phase 9.6**: Verifies 2 separate conversations for command workflow issue
+- **Phase 9.6**: Verifies 1 conversation with 2+ sessions for command workflow issue
 
 **Critical Behavior Verified:**
-- ✅ Execute command creates new conversation context (fresh start for implementation)
+- ✅ Execute command creates new SESSION (fresh AI context, no memory of planning)
 - ✅ Old sessions properly deactivated (clean state management)
 - ✅ Conversation-to-codebase linking works correctly
 - ✅ Session lifecycle management (create → active → inactive)
+
+**Design Note: Conversations vs Sessions**
+- **Conversations** = Platform threads (1 per GitHub issue, 1 per Telegram chat)
+- **Sessions** = AI interaction phases (multiple per conversation)
+- For plan→execute: NEW session provides AI separation, same conversation tracks platform context
 
 ### After Validation
 - **Cleanup**: Repository is NOT auto-deleted for safety (manual confirmation required)
