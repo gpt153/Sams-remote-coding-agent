@@ -10,7 +10,7 @@ Deploy the Remote Coding Agent to a cloud VPS for 24/7 operation with automatic 
 
 **Required:**
 - Cloud VPS account (DigitalOcean, Linode, AWS EC2, Vultr, etc.)
-- Domain name or subdomain (e.g., `bot.yourdomain.com`)
+- Domain name or subdomain (e.g., `remote-agent.yourdomain.com`)
 - SSH client installed on your local machine
 - Basic command-line familiarity
 
@@ -97,7 +97,7 @@ cat ~/.ssh/id_ed25519.pub
 
 ```bash
 # Replace with your server IP (uses SSH key from Prerequisites)
-ssh root@your-server-ip
+ssh -i ~/.ssh/id_ed25519.pub root@your-server-ip
 ```
 
 **Create deployment user:**
@@ -115,7 +115,7 @@ chmod 700 /home/deploy/.ssh
 chmod 600 /home/deploy/.ssh/authorized_keys
 
 # Test connection in a new terminal before proceeding:
-# ssh deploy@your-server-ip
+# ssh -i ~/.ssh/id_ed25519.pub deploy@your-server-ip
 ```
 
 **Disable password authentication for security:**
@@ -129,6 +129,8 @@ Find and change:
 ```
 PasswordAuthentication no
 ```
+
+> To get out of Nano after making changes, press: Ctrl + X -> Y -> enter
 
 Restart SSH:
 ```bash
@@ -167,7 +169,7 @@ sudo usermod -aG docker deploy
 
 # Log out and back in for group changes to take effect
 exit
-ssh deploy@your-server-ip
+ssh -i ~/.ssh/id_ed25519.pub deploy@your-server-ip
 ```
 
 **Install Docker Compose, Git, and PostgreSQL Client:**
@@ -196,14 +198,14 @@ Point your domain to your server's IP address.
 
 1. Go to your domain registrar or DNS provider (Cloudflare, Namecheap, etc.)
 2. Create an **A Record**:
-   - **Name:** `bot` (for `bot.yourdomain.com`) or `@` (for `yourdomain.com`)
+   - **Name:** `remote-agent` (for `remote-agent.yourdomain.com`) or `@` (for `yourdomain.com`)
    - **Value:** Your server's public IP address
    - **TTL:** 300 (5 minutes) or default
 
 **Example (Cloudflare):**
 ```
 Type: A
-Name: bot
+Name: remote-agent
 Content: 123.45.67.89
 Proxy: Off (DNS Only)
 TTL: Auto
@@ -222,7 +224,7 @@ sudo chown deploy:deploy /remote-coding-agent
 
 # Clone repository into the directory
 cd /remote-coding-agent
-git clone https://github.com/your-username/remote-coding-agent.git .
+git clone https://github.com/dynamous-community/remote-coding-agent .
 ```
 
 ---
@@ -485,12 +487,12 @@ nano Caddyfile
 **Update with your domain:**
 
 ```
-bot.yourdomain.com {
+remote-agent.yourdomain.com {
     reverse_proxy app:3000
 }
 ```
 
-Replace `bot.yourdomain.com` with your actual domain.
+Replace `remote-agent.yourdomain.com` with your actual domain.
 
 **Save and exit:** `Ctrl+X`, then `Y`, then `Enter`
 
@@ -505,6 +507,14 @@ Replace `bot.yourdomain.com` with your actual domain.
 
 ## 7. Start Services
 
+### Setup Workspace Permissions (Linux Only)
+
+```bash
+# Create workspace directory and set permissions for container user (UID 1001)
+mkdir -p workspace
+sudo chown -R 1001:1001 workspace
+```
+
 ### Option A: With Remote PostgreSQL (Recommended)
 
 If using managed database:
@@ -514,7 +524,7 @@ If using managed database:
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
 
 # View logs
-docker compose logs -f app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 ```
 
 ### Option B: With Local PostgreSQL
@@ -526,15 +536,15 @@ If using `with-db` profile:
 docker compose --profile with-db -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
 
 # View logs
-docker compose logs -f app
-docker compose logs -f postgres
+docker compose --profile with-db -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
+docker compose --profile with-db -f docker-compose.yml -f docker-compose.cloud.yml logs -f postgres
 ```
 
 ### Monitor Startup
 
 ```bash
 # Watch logs for successful startup
-docker compose logs -f app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 
 # Look for:
 # [App] Starting Remote Coding Agent
@@ -554,21 +564,21 @@ docker compose logs -f app
 
 ```bash
 # Basic health check
-curl https://bot.yourdomain.com/health
+curl https://remote-agent.yourdomain.com/health
 # Expected: {"status":"ok"}
 
 # Database connectivity
-curl https://bot.yourdomain.com/health/db
+curl https://remote-agent.yourdomain.com/health/db
 # Expected: {"status":"ok","database":"connected"}
 
 # Concurrency status
-curl https://bot.yourdomain.com/health/concurrency
+curl https://remote-agent.yourdomain.com/health/concurrency
 # Expected: {"status":"ok","active":0,"queued":0,"maxConcurrent":10}
 ```
 
 ### Check SSL Certificate
 
-Visit `https://bot.yourdomain.com/health` in your browser:
+Visit `https://remote-agent.yourdomain.com/health` in your browser:
 - Should show green padlock
 - Certificate issued by "Let's Encrypt"
 - Auto-redirect from HTTP to HTTPS
@@ -606,7 +616,7 @@ openssl rand -hex 32
 
 | Field | Value |
 |-------|-------|
-| **Payload URL** | `https://bot.yourdomain.com/webhooks/github` |
+| **Payload URL** | `https://remote-agent.yourdomain.com/webhooks/github` |
 | **Content type** | `application/json` |
 | **Secret** | Your `WEBHOOK_SECRET` from `.env` |
 | **SSL verification** | Enable SSL verification |
@@ -634,14 +644,14 @@ Bot should respond with analysis.
 
 ```bash
 # All services
-docker compose logs -f
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f
 
 # Specific service
-docker compose logs -f app
-docker compose logs -f caddy
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f caddy
 
 # Last 100 lines
-docker compose logs --tail=100 app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs --tail=100 app
 ```
 
 ### Update Application
@@ -655,28 +665,28 @@ git pull
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
 
 # Check logs
-docker compose logs -f app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 ```
 
 ### Restart Services
 
 ```bash
 # Restart all services
-docker compose restart
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml restart
 
 # Restart specific service
-docker compose restart app
-docker compose restart caddy
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml restart app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml restart caddy
 ```
 
 ### Stop Services
 
 ```bash
 # Stop all services
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml down
 
 # Stop and remove volumes (caution: deletes data)
-docker compose down -v
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml down -v
 ```
 
 ---
@@ -687,7 +697,7 @@ docker compose down -v
 
 **Check DNS:**
 ```bash
-dig bot.yourdomain.com
+dig remote-agent.yourdomain.com
 # Should return your server IP
 ```
 
@@ -699,7 +709,7 @@ sudo ufw status
 
 **Check Caddy logs:**
 ```bash
-docker compose logs caddy
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs caddy
 # Look for certificate issuance attempts
 ```
 
@@ -713,8 +723,8 @@ docker compose logs caddy
 
 **Check if running:**
 ```bash
-docker compose ps
-# Should show 'app' with state 'Up'
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml ps
+# Should show 'app' and 'caddy' with state 'Up'
 ```
 
 **Check health endpoint:**
@@ -725,7 +735,7 @@ curl http://localhost:3000/health
 
 **Check logs:**
 ```bash
-docker compose logs -f app
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 ```
 
 ### Database Connection Errors
@@ -762,7 +772,7 @@ cat .env | grep WEBHOOK_SECRET
 
 **Test webhook endpoint:**
 ```bash
-curl https://bot.yourdomain.com/webhooks/github
+curl https://remote-agent.yourdomain.com/webhooks/github
 # Should return 400 (missing signature) - means endpoint is reachable
 ```
 
