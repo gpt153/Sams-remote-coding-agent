@@ -2,7 +2,11 @@
  * Remote Coding Agent - Main Entry Point
  * Telegram + Claude MVP
  */
+
+// Load environment variables FIRST, before any other imports
 import * as dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import { TelegramAdapter } from './adapters/telegram';
 import { TestAdapter } from './adapters/test';
@@ -10,9 +14,6 @@ import { GitHubAdapter } from './adapters/github';
 import { handleMessage } from './orchestrator/orchestrator';
 import { pool } from './db/connection';
 import { ConversationLockManager } from './utils/conversation-lock';
-
-// Load environment variables
-dotenv.config();
 
 async function main(): Promise<void> {
   console.log('[App] Starting Remote Coding Agent (Telegram + Claude MVP)');

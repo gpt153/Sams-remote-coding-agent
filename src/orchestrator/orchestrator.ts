@@ -46,14 +46,17 @@ export async function handleMessage(
     let commandName: string | null = null;
 
     if (message.startsWith('/command-invoke')) {
-      const parts = message.split(/\s+/);
-      if (parts.length < 2) {
+      // Use parseCommand to properly handle quoted arguments
+      // e.g., /command-invoke plan "here is the request" → args = ['plan', 'here is the request']
+      const { args: parsedArgs } = commandHandler.parseCommand(message);
+
+      if (parsedArgs.length < 1) {
         await platform.sendMessage(conversationId, 'Usage: /command-invoke <name> [args...]');
         return;
       }
 
-      commandName = parts[1];
-      const args = parts.slice(2);
+      commandName = parsedArgs[0];
+      const args = parsedArgs.slice(1);
 
       if (!conversation.codebase_id) {
         await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');

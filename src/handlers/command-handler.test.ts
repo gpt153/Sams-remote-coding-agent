@@ -82,5 +82,50 @@ describe('CommandHandler', () => {
       expect(result.command).toBe('repos');
       expect(result.args).toEqual([]);
     });
+
+    // Bug fix tests: Multi-word quoted arguments should be preserved as single arg
+    test('should preserve multi-word quoted string as single argument', () => {
+      const result = parseCommand('/command-invoke plan "here is the request"');
+      expect(result.command).toBe('command-invoke');
+      expect(result.args).toEqual(['plan', 'here is the request']);
+      // Specifically verify the second arg is the FULL quoted string
+      expect(result.args[1]).toBe('here is the request');
+    });
+
+    test('should handle long quoted sentences', () => {
+      const result = parseCommand(
+        '/command-invoke execute "Implement the user authentication feature with JWT tokens"'
+      );
+      expect(result.command).toBe('command-invoke');
+      expect(result.args).toEqual([
+        'execute',
+        'Implement the user authentication feature with JWT tokens',
+      ]);
+    });
+
+    test('should handle multiple quoted arguments', () => {
+      const result = parseCommand('/command-invoke test "first arg" "second arg" "third arg"');
+      expect(result.command).toBe('command-invoke');
+      expect(result.args).toEqual(['test', 'first arg', 'second arg', 'third arg']);
+    });
+
+    test('should handle mixed quoted and unquoted with spaces', () => {
+      const result = parseCommand('/command-invoke plan "Add feature X" --flag value');
+      expect(result.command).toBe('command-invoke');
+      expect(result.args).toEqual(['plan', 'Add feature X', '--flag', 'value']);
+    });
+
+    test('should handle quoted arg with special characters', () => {
+      const result = parseCommand('/command-invoke plan "Fix bug #123: handle edge case"');
+      expect(result.command).toBe('command-invoke');
+      expect(result.args).toEqual(['plan', 'Fix bug #123: handle edge case']);
+    });
+
+    test('should handle empty quoted string', () => {
+      const result = parseCommand('/command-invoke plan ""');
+      expect(result.command).toBe('command-invoke');
+      // Empty quotes get matched by \S+ and stripped, resulting in empty string
+      expect(result.args).toEqual(['plan', '']);
+    });
   });
 });
