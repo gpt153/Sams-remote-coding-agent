@@ -9,6 +9,27 @@ argument-hint: <path/to/plan.md>
 
 ---
 
+## Step 0: Branch Setup
+
+Before making any changes, ensure you're on the correct branch:
+
+```bash
+# Check current branch
+git branch --show-current
+
+# Check if a feature branch already exists
+git branch -a | grep -i feature
+```
+
+**If on main/master:**
+1. Check if a branch for this feature already exists
+2. If yes → `git checkout [branch-name]`
+3. If no → Create one: `git checkout -b feature/[name]`
+
+**Branch naming**: `feature/[short-description]` (e.g., `feature/discord-adapter`, `feature/add-caching`)
+
+---
+
 ## Your Mission
 
 Execute the plan end-to-end. You are autonomous and adaptive.
