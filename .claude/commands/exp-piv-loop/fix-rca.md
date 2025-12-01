@@ -10,6 +10,27 @@ argument-hint: <path/to/RCA-report.md> [plan]
 
 ---
 
+## Phase 0: Branch Setup
+
+Before making any changes, ensure you're on the correct branch:
+
+```bash
+# Check current branch
+git branch --show-current
+
+# Check if a fix branch already exists
+git branch -a | grep -i fix
+```
+
+**If on main/master:**
+1. Check if a branch for this fix already exists
+2. If yes → `git checkout [branch-name]`
+3. If no → Create one: `git checkout -b fix/[issue-name]`
+
+**Branch naming**: `fix/[short-description]` (e.g., `fix/ssh-url-handling`, `fix/command-injection`)
+
+---
+
 ## Your Mission
 
 Implement the fix described in the RCA report. But you are NOT a blind executor. You are a thinking engineer who:
