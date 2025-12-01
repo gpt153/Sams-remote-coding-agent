@@ -4,6 +4,7 @@
  */
 import { Telegraf, Context } from 'telegraf';
 import { IPlatformAdapter } from '../types';
+import { convertToTelegramMarkdown, stripMarkdown } from '../utils/telegram-markdown';
 
 const MAX_LENGTH = 4096;
 
@@ -24,33 +25,97 @@ export class TelegramAdapter implements IPlatformAdapter {
   /**
    * Send a message to a Telegram chat
    * Automatically splits messages longer than 4096 characters
+   *
+   * Formatting strategy:
+   * - Short messages (≤4096 chars): Convert to MarkdownV2 for nice formatting
+   * - Long messages: Split by paragraphs, format each chunk independently
+   *   (paragraphs rarely have formatting that spans across them)
    */
   async sendMessage(chatId: string, message: string): Promise<void> {
     const id = parseInt(chatId);
+    console.log(`[Telegram] sendMessage called, length=${message.length}`);
 
     if (message.length <= MAX_LENGTH) {
-      await this.bot.telegram.sendMessage(id, message);
+      // Short message: try MarkdownV2 formatting
+      await this.sendFormattedChunk(id, message);
     } else {
-      // Split long messages by lines to preserve formatting
-      const lines = message.split('\n');
-      let chunk = '';
+      // Long message: split by paragraphs, format each chunk
+      console.log(`[Telegram] Message too long (${message.length}), splitting by paragraphs`);
+      const chunks = this.splitIntoParagraphChunks(message, MAX_LENGTH - 200);
 
+      for (const chunk of chunks) {
+        await this.sendFormattedChunk(id, chunk);
+      }
+    }
+  }
+
+  /**
+   * Split message into chunks by paragraph boundaries
+   * Paragraphs are separated by double newlines and usually contain complete formatting
+   */
+  private splitIntoParagraphChunks(message: string, maxLength: number): string[] {
+    const paragraphs = message.split(/\n\n+/);
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const para of paragraphs) {
+      const newLength = currentChunk.length + para.length + 2; // +2 for \n\n
+
+      if (newLength > maxLength && currentChunk) {
+        // Current chunk is full, start a new one
+        chunks.push(currentChunk);
+        currentChunk = para;
+      } else {
+        // Add paragraph to current chunk
+        currentChunk += (currentChunk ? '\n\n' : '') + para;
+      }
+    }
+
+    // Don't forget the last chunk
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    console.log(`[Telegram] Split into ${chunks.length} paragraph chunks`);
+    return chunks;
+  }
+
+  /**
+   * Send a single chunk with MarkdownV2 formatting, with fallback to plain text
+   */
+  private async sendFormattedChunk(id: number, chunk: string): Promise<void> {
+    // If chunk is still too long after paragraph splitting, fall back to plain text
+    if (chunk.length > MAX_LENGTH) {
+      console.log(`[Telegram] Chunk too long (${chunk.length}), sending as plain text`);
+      const plainText = stripMarkdown(chunk);
+      // Split by lines if still too long
+      const lines = plainText.split('\n');
+      let subChunk = '';
       for (const line of lines) {
-        // Reserve 100 chars for safety margin
-        if (chunk.length + line.length + 1 > MAX_LENGTH - 100) {
-          if (chunk) {
-            await this.bot.telegram.sendMessage(id, chunk);
-          }
-          chunk = line;
+        if (subChunk.length + line.length + 1 > MAX_LENGTH - 100) {
+          if (subChunk) await this.bot.telegram.sendMessage(id, subChunk);
+          subChunk = line;
         } else {
-          chunk += (chunk ? '\n' : '') + line;
+          subChunk += (subChunk ? '\n' : '') + line;
         }
       }
+      if (subChunk) await this.bot.telegram.sendMessage(id, subChunk);
+      return;
+    }
 
-      // Send remaining chunk
-      if (chunk) {
-        await this.bot.telegram.sendMessage(id, chunk);
-      }
+    // Try MarkdownV2 formatting
+    const formatted = convertToTelegramMarkdown(chunk);
+    try {
+      await this.bot.telegram.sendMessage(id, formatted, { parse_mode: 'MarkdownV2' });
+      console.log(`[Telegram] MarkdownV2 chunk sent (${chunk.length} chars)`);
+    } catch (error) {
+      // Fallback to stripped plain text for this chunk
+      const err = error as Error;
+      console.warn(`[Telegram] MarkdownV2 failed for chunk, using plain text:`, err.message);
+      console.warn(`[Telegram] Original chunk (first 500 chars):`, chunk.substring(0, 500));
+      console.warn(`[Telegram] Formatted chunk (first 500 chars):`, formatted.substring(0, 500));
+      console.warn(`[Telegram] Formatted chunk (around byte 4059):`, formatted.substring(4000, 4100));
+      await this.bot.telegram.sendMessage(id, stripMarkdown(chunk));
     }
   }
 
