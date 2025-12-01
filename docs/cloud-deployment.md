@@ -9,12 +9,14 @@ Deploy the Remote Coding Agent to a cloud VPS for 24/7 operation with automatic 
 ## Prerequisites
 
 **Required:**
+
 - Cloud VPS account (DigitalOcean, Linode, AWS EC2, Vultr, etc.)
 - Domain name or subdomain (e.g., `remote-agent.yourdomain.com`)
 - SSH client installed on your local machine
 - Basic command-line familiarity
 
 **Recommended Specs:**
+
 - **CPU:** 1-2 vCPUs
 - **RAM:** 2GB minimum (4GB recommended)
 - **Storage:** 20GB SSD
@@ -126,6 +128,7 @@ nano /etc/ssh/sshd_config
 ```
 
 Find and change:
+
 ```
 PasswordAuthentication no
 ```
@@ -133,6 +136,7 @@ PasswordAuthentication no
 > To get out of Nano after making changes, press: Ctrl + X -> Y -> enter
 
 Restart SSH:
+
 ```bash
 systemctl restart ssh
 
@@ -203,6 +207,7 @@ Point your domain to your server's IP address.
    - **TTL:** 300 (5 minutes) or default
 
 **Example (Cloudflare):**
+
 ```
 Type: A
 Name: remote-agent
@@ -274,12 +279,14 @@ WORKSPACE_PATH=./workspace
 Use a managed database service for easier backups and scaling.
 
 **Supabase (Free tier available):**
+
 1. Create project at [supabase.com](https://supabase.com)
 2. Go to Settings → Database
 3. Copy connection string (Transaction pooler recommended)
 4. Set as `DATABASE_URL`
 
 **Neon:**
+
 1. Create project at [neon.tech](https://neon.tech)
 2. Copy connection string from dashboard
 3. Set as `DATABASE_URL`
@@ -327,6 +334,7 @@ nano .env
 ```
 
 Add:
+
 ```env
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxxxx
 ```
@@ -334,14 +342,17 @@ CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxxxx
 **Alternative: API Key**
 
 If you prefer pay-per-use:
+
 1. Visit [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
 2. Create key (starts with `sk-ant-`)
 3. Set in `.env`:
+
 ```env
 CLAUDE_API_KEY=sk-ant-xxxxx
 ```
 
 **Set as default (optional):**
+
 ```env
 DEFAULT_AI_ASSISTANT=claude
 ```
@@ -376,6 +387,7 @@ nano .env
 ```
 
 Add all four credentials:
+
 ```env
 CODEX_ID_TOKEN=eyJhbGc...
 CODEX_ACCESS_TOKEN=eyJhbGc...
@@ -384,6 +396,7 @@ CODEX_ACCOUNT_ID=6a6a7ba6-...
 ```
 
 **Set as default (optional):**
+
 ```env
 DEFAULT_AI_ASSISTANT=codex
 ```
@@ -412,6 +425,7 @@ nano .env
 ```
 
 Add:
+
 ```env
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
 TELEGRAM_STREAMING_MODE=stream  # stream (default) | batch
@@ -436,6 +450,7 @@ openssl rand -hex 32
 ```
 
 Add to `.env`:
+
 ```env
 WEBHOOK_SECRET=your_generated_secret_here
 GITHUB_STREAMING_MODE=batch  # batch (default) | stream
@@ -579,6 +594,7 @@ curl https://remote-agent.yourdomain.com/health/concurrency
 ### Check SSL Certificate
 
 Visit `https://remote-agent.yourdomain.com/health` in your browser:
+
 - Should show green padlock
 - Certificate issued by "Let's Encrypt"
 - Auto-redirect from HTTP to HTTPS
@@ -586,6 +602,7 @@ Visit `https://remote-agent.yourdomain.com/health` in your browser:
 ### Check Telegram (if configured)
 
 Message your bot on Telegram:
+
 ```
 /help
 ```
@@ -614,13 +631,13 @@ openssl rand -hex 32
 
 **Webhook Configuration:**
 
-| Field | Value |
-|-------|-------|
-| **Payload URL** | `https://remote-agent.yourdomain.com/webhooks/github` |
-| **Content type** | `application/json` |
-| **Secret** | Your `WEBHOOK_SECRET` from `.env` |
-| **SSL verification** | Enable SSL verification |
-| **Events** | Select individual events:<br>✓ Issues<br>✓ Issue comments<br>✓ Pull requests |
+| Field                | Value                                                                        |
+| -------------------- | ---------------------------------------------------------------------------- |
+| **Payload URL**      | `https://remote-agent.yourdomain.com/webhooks/github`                        |
+| **Content type**     | `application/json`                                                           |
+| **Secret**           | Your `WEBHOOK_SECRET` from `.env`                                            |
+| **SSL verification** | Enable SSL verification                                                      |
+| **Events**           | Select individual events:<br>✓ Issues<br>✓ Issue comments<br>✓ Pull requests |
 
 3. Click "Add webhook"
 4. Check "Recent Deliveries" tab for successful delivery (green checkmark)
@@ -628,6 +645,7 @@ openssl rand -hex 32
 **Test webhook:**
 
 Comment on an issue:
+
 ```
 @your-bot-name can you analyze this issue?
 ```
@@ -696,24 +714,28 @@ docker compose -f docker-compose.yml -f docker-compose.cloud.yml down -v
 ### Caddy Not Getting SSL Certificate
 
 **Check DNS:**
+
 ```bash
 dig remote-agent.yourdomain.com
 # Should return your server IP
 ```
 
 **Check firewall:**
+
 ```bash
 sudo ufw status
 # Should allow ports 80 and 443
 ```
 
 **Check Caddy logs:**
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs caddy
 # Look for certificate issuance attempts
 ```
 
 **Common issues:**
+
 - DNS not propagated yet (wait 5-60 minutes)
 - Firewall blocking ports 80/443
 - Domain typo in Caddyfile
@@ -722,18 +744,21 @@ docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs caddy
 ### App Not Responding
 
 **Check if running:**
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml ps
 # Should show 'app' and 'caddy' with state 'Up'
 ```
 
 **Check health endpoint:**
+
 ```bash
 curl http://localhost:3000/health
 # Tests app directly (bypasses Caddy)
 ```
 
 **Check logs:**
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 ```
@@ -741,18 +766,21 @@ docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs -f app
 ### Database Connection Errors
 
 **For remote database:**
+
 ```bash
 # Test connection from server
 psql $DATABASE_URL -c "SELECT 1"
 ```
 
 **Check environment variable:**
+
 ```bash
 # View .env (don't share output publicly)
 cat .env | grep DATABASE_URL
 ```
 
 **Run migrations if tables missing:**
+
 ```bash
 psql $DATABASE_URL < migrations/001_initial_schema.sql
 ```
@@ -760,17 +788,20 @@ psql $DATABASE_URL < migrations/001_initial_schema.sql
 ### GitHub Webhook Not Working
 
 **Check webhook deliveries:**
+
 1. Go to webhook settings in GitHub
 2. Click "Recent Deliveries"
 3. Look for error messages
 
 **Verify webhook secret:**
+
 ```bash
 cat .env | grep WEBHOOK_SECRET
 # Must match GitHub webhook configuration
 ```
 
 **Test webhook endpoint:**
+
 ```bash
 curl https://remote-agent.yourdomain.com/webhooks/github
 # Should return 400 (missing signature) - means endpoint is reachable
@@ -779,12 +810,14 @@ curl https://remote-agent.yourdomain.com/webhooks/github
 ### Out of Disk Space
 
 **Check disk usage:**
+
 ```bash
 df -h
 docker system df
 ```
 
 **Clean up Docker:**
+
 ```bash
 # Remove unused images and containers
 docker system prune -a

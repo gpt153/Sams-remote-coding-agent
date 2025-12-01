@@ -49,7 +49,9 @@ export class ConversationLockManager {
 
     // Check if at max capacity - queue if yes
     if (this.activeConversations.size >= this.maxConcurrent) {
-      console.log(`[ConversationLock] At max capacity (${this.maxConcurrent}), queuing ${conversationId}`);
+      console.log(
+        `[ConversationLock] At max capacity (${this.maxConcurrent}), queuing ${conversationId}`
+      );
       this.queueMessage(conversationId, handler);
       return;
     }
@@ -57,7 +59,7 @@ export class ConversationLockManager {
     // Execute immediately
     console.log(`[ConversationLock] Starting ${conversationId}`, {
       active: this.activeConversations.size + 1,
-      queued: this.getQueuedCount()
+      queued: this.getQueuedCount(),
     });
 
     // Store Promise in Map BEFORE awaiting (prevents race conditions)
@@ -70,7 +72,7 @@ export class ConversationLockManager {
         this.activeConversations.delete(conversationId);
         console.log(`[ConversationLock] Completed ${conversationId}`, {
           active: this.activeConversations.size,
-          queued: this.getQueuedCount()
+          queued: this.getQueuedCount(),
         });
 
         // Process next queued message for this conversation
@@ -100,10 +102,10 @@ export class ConversationLockManager {
     }
     this.messageQueues.get(conversationId)!.push({
       handler,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
     console.log(`[ConversationLock] Queued message for ${conversationId}`, {
-      queueLength: this.messageQueues.get(conversationId)!.length
+      queueLength: this.messageQueues.get(conversationId)!.length,
     });
   }
 
@@ -122,7 +124,7 @@ export class ConversationLockManager {
     const waitTime = Date.now() - next.timestamp;
     console.log('[ConversationLock] Processing queued message', {
       conversationId,
-      waitTimeMs: waitTime
+      waitTimeMs: waitTime,
     });
 
     await this.acquireLock(conversationId, next.handler);
@@ -139,22 +141,17 @@ export class ConversationLockManager {
     maxConcurrent: number;
     activeConversationIds: string[];
   } {
-    const queuedByConversation = Array.from(this.messageQueues.entries()).map(
-      ([id, queue]) => ({
-        conversationId: id,
-        queuedMessages: queue.length
-      })
-    );
+    const queuedByConversation = Array.from(this.messageQueues.entries()).map(([id, queue]) => ({
+      conversationId: id,
+      queuedMessages: queue.length,
+    }));
 
     return {
       active: this.activeConversations.size,
-      queuedTotal: Array.from(this.messageQueues.values()).reduce(
-        (sum, q) => sum + q.length,
-        0
-      ),
+      queuedTotal: Array.from(this.messageQueues.values()).reduce((sum, q) => sum + q.length, 0),
       queuedByConversation,
       maxConcurrent: this.maxConcurrent,
-      activeConversationIds: Array.from(this.activeConversations.keys())
+      activeConversationIds: Array.from(this.activeConversations.keys()),
     };
   }
 

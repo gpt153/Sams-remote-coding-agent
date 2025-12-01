@@ -25,10 +25,10 @@ async function getCodex(): Promise<Codex> {
     if (!codexClass) {
       // Dynamic import to handle ESM-only package (bypasses TS transpilation)
       // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unsafe-call
-      const { Codex: ImportedCodex } = await importDynamic('@openai/codex-sdk') as CodexSDK;
+      const { Codex: ImportedCodex } = (await importDynamic('@openai/codex-sdk')) as CodexSDK;
       codexClass = ImportedCodex;
     }
-     
+
     codexInstance = new codexClass();
   }
   return codexInstance;
@@ -64,7 +64,10 @@ export class CodexClient implements IAssistantClient {
           skipGitRepoCheck: true,
         });
       } catch (error) {
-        console.error(`[Codex] Failed to resume thread ${resumeSessionId}, creating new one:`, error);
+        console.error(
+          `[Codex] Failed to resume thread ${resumeSessionId}, creating new one:`,
+          error
+        );
         // Fall back to creating new thread
         thread = codex.startThread({
           workingDirectory: cwd,

@@ -132,7 +132,9 @@ import { YourPlatformAdapter } from './adapters/your-platform';
 
 // Read environment variables
 const yourPlatformToken = process.env.YOUR_PLATFORM_TOKEN;
-const yourPlatformMode = (process.env.YOUR_PLATFORM_STREAMING_MODE || 'stream') as 'stream' | 'batch';
+const yourPlatformMode = (process.env.YOUR_PLATFORM_STREAMING_MODE || 'stream') as
+  | 'stream'
+  | 'batch';
 
 if (yourPlatformToken) {
   const adapter = new YourPlatformAdapter(yourPlatformToken, yourPlatformMode);
@@ -190,6 +192,7 @@ async sendMessage(conversationId: string, message: string): Promise<void> {
 #### Polling vs Webhooks
 
 **Polling** (Telegram pattern):
+
 ```typescript
 async start(): Promise<void> {
   this.bot.on('message', async (ctx) => {
@@ -203,6 +206,7 @@ async start(): Promise<void> {
 ```
 
 **Webhooks** (GitHub pattern):
+
 ```typescript
 // In src/index.ts, add Express route
 app.post('/webhooks/your-platform', async (req, res) => {
@@ -241,11 +245,7 @@ AI assistant clients wrap AI SDKs and provide a unified streaming interface. Imp
 ```typescript
 export interface IAssistantClient {
   // Send a query and get streaming response
-  sendQuery(
-    prompt: string,
-    cwd: string,
-    resumeSessionId?: string
-  ): AsyncGenerator<MessageChunk>;
+  sendQuery(prompt: string, cwd: string, resumeSessionId?: string): AsyncGenerator<MessageChunk>;
 
   // Get the assistant type identifier
   getType(): string;
@@ -257,9 +257,9 @@ export interface IAssistantClient {
 ```typescript
 interface MessageChunk {
   type: 'assistant' | 'result' | 'system' | 'tool' | 'thinking';
-  content?: string;       // Text content for assistant/system/thinking
-  sessionId?: string;     // Session ID for result type
-  toolName?: string;      // Tool name for tool type
+  content?: string; // Text content for assistant/system/thinking
+  sessionId?: string; // Session ID for result type
+  toolName?: string; // Tool name for tool type
   toolInput?: Record<string, unknown>; // Tool parameters
 }
 ```
@@ -558,6 +558,7 @@ export function substituteVariables(
 
 ```markdown
 <!-- .claude/commands/analyze.md -->
+
 Analyze the following aspect of the codebase: $1
 
 Focus on: $ARGUMENTS
@@ -653,10 +654,10 @@ SLACK_STREAMING_MODE=stream     # Default: stream (real-time chat)
 
 ### Mode Comparison
 
-| Mode | Behavior | Pros | Cons | Best For |
-|------|----------|------|------|----------|
+| Mode       | Behavior                                    | Pros                                       | Cons                                  | Best For                         |
+| ---------- | ------------------------------------------- | ------------------------------------------ | ------------------------------------- | -------------------------------- |
 | **stream** | Send each chunk immediately as AI generates | Real-time feedback, engaging, see progress | Many API calls, potential rate limits | Chat platforms (Telegram, Slack) |
-| **batch** | Accumulate all chunks, send final summary | Single message, no spam, clean | No progress indication, longer wait | Issue trackers (GitHub, Jira) |
+| **batch**  | Accumulate all chunks, send final summary   | Single message, no spam, clean             | No progress indication, longer wait   | Issue trackers (GitHub, Jira)    |
 
 ### Implementation
 
@@ -727,10 +728,7 @@ const finalMessage = cleanSections.join('\n\n').trim();
 **Location:** `src/utils/tool-formatter.ts`
 
 ```typescript
-export function formatToolCall(
-  toolName: string,
-  toolInput?: Record<string, unknown>
-): string {
+export function formatToolCall(toolName: string, toolInput?: Record<string, unknown>): string {
   let message = `🔧 ${toolName.toUpperCase()}`;
 
   // Add context-specific info
@@ -787,6 +785,7 @@ remote_agent_sessions
 **Location:** `src/db/`
 
 **Codebases** (`src/db/codebases.ts`):
+
 - `createCodebase()` - Create codebase record
 - `getCodebase(id)` - Get by ID
 - `findCodebaseByRepoUrl(url)` - Find by repository URL
@@ -795,10 +794,12 @@ remote_agent_sessions
 - `getCodebaseCommands(id)` - Get all commands
 
 **Conversations** (`src/db/conversations.ts`):
+
 - `getOrCreateConversation(platform, id)` - Idempotent get/create
 - `updateConversation(id, data)` - Update fields
 
 **Sessions** (`src/db/sessions.ts`):
+
 - `createSession(data)` - Create new session
 - `getActiveSession(conversationId)` - Get active session for conversation
 - `updateSession(id, sessionId)` - Update `assistant_session_id`
@@ -1053,6 +1054,7 @@ await handleMessage(adapter, conversationId, finalMessage);
 ---
 
 **For detailed implementation examples, see:**
+
 - Platform adapter: `src/adapters/telegram.ts`, `src/adapters/github.ts`
 - AI client: `src/clients/claude.ts`, `src/clients/codex.ts`
 - Orchestrator: `src/orchestrator/orchestrator.ts`

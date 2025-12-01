@@ -375,10 +375,7 @@ ${userComment}`;
   /**
    * Handle incoming webhook event
    */
-  async handleWebhook(
-    payload: string,
-    signature: string
-  ): Promise<void> {
+  async handleWebhook(payload: string, signature: string): Promise<void> {
     // 1. Verify signature
     if (!this.verifySignature(payload, signature)) {
       console.error('[GitHub] Invalid webhook signature');
@@ -405,10 +402,11 @@ ${userComment}`;
     const isNewConversation = !existingConv.codebase_id;
 
     // 6. Get/create codebase (checks for existing first!)
-    const { codebase, repoPath, isNew: isNewCodebase } = await this.getOrCreateCodebaseForRepo(
-      owner,
-      repo
-    );
+    const {
+      codebase,
+      repoPath,
+      isNew: isNewCodebase,
+    } = await this.getOrCreateCodebaseForRepo(owner, repo);
 
     // 7. Get default branch
     const { data: repoData } = await this.octokit.rest.repos.get({ owner, repo });

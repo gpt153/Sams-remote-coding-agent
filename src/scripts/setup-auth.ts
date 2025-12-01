@@ -83,7 +83,9 @@ network_access = true
   try {
     fs.writeFileSync(configPath, configContent);
     console.log(`✅ Successfully created config.toml at: ${configPath}`);
-    console.log('✅ Codex YOLO mode enabled (approval_policy="never", sandbox_mode="danger-full-access")');
+    console.log(
+      '✅ Codex YOLO mode enabled (approval_policy="never", sandbox_mode="danger-full-access")'
+    );
   } catch (error) {
     console.error(`❌ Failed to write config.toml: ${error}`);
     process.exit(1);

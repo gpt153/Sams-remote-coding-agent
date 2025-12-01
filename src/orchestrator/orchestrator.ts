@@ -34,7 +34,10 @@ export async function handleMessage(
 
         // Reload conversation if modified
         if (result.modified) {
-          conversation = await db.getOrCreateConversation(platform.getPlatformType(), conversationId);
+          conversation = await db.getOrCreateConversation(
+            platform.getPlatformType(),
+            conversationId
+          );
         }
         return;
       }
@@ -122,7 +125,8 @@ export async function handleMessage(
 
     // Check for plan→execute transition (requires NEW session per PRD)
     // Note: The planning command is named 'plan-feature', not 'plan'
-    const needsNewSession = commandName === 'execute' && session?.metadata?.lastCommand === 'plan-feature';
+    const needsNewSession =
+      commandName === 'execute' && session?.metadata?.lastCommand === 'plan-feature';
 
     if (needsNewSession) {
       console.log('[Orchestrator] Plan→Execute transition: creating new session');
@@ -209,7 +213,8 @@ export async function handleMessage(
 
         // Filter out sections that start with tool indicators
         // Using alternation for emojis with variation selectors
-        const toolIndicatorRegex = /^(?:\u{1F527}|\u{1F4AD}|\u{1F4DD}|\u{270F}\u{FE0F}|\u{1F5D1}\u{FE0F}|\u{1F4C2}|\u{1F50D})/u;
+        const toolIndicatorRegex =
+          /^(?:\u{1F527}|\u{1F4AD}|\u{1F4DD}|\u{270F}\u{FE0F}|\u{1F5D1}\u{FE0F}|\u{1F4C2}|\u{1F50D})/u;
         const cleanSections = sections.filter(section => {
           const trimmed = section.trim();
           return !toolIndicatorRegex.exec(trimmed);

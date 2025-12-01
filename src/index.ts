@@ -122,7 +122,7 @@ async function main(): Promise<void> {
       const stats = lockManager.getStats();
       res.json({
         status: 'ok',
-        ...stats
+        ...stats,
       });
     } catch (_error) {
       res.status(500).json({ status: 'error', reason: 'Failed to get stats' });

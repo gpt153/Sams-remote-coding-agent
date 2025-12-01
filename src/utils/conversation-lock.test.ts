@@ -17,7 +17,7 @@ describe('ConversationLockManager', () => {
       queuedTotal: 0,
       queuedByConversation: [],
       maxConcurrent: 10,
-      activeConversationIds: []
+      activeConversationIds: [],
     });
   });
 
@@ -59,7 +59,7 @@ describe('ConversationLockManager', () => {
     expect(stats.active).toBe(1);
     expect(stats.queuedTotal).toBe(1);
     expect(stats.queuedByConversation).toEqual([
-      { conversationId: 'same-conv', queuedMessages: 1 }
+      { conversationId: 'same-conv', queuedMessages: 1 },
     ]);
 
     // Wait for both to complete

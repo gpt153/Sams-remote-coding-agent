@@ -331,7 +331,10 @@ Session:
         const markdownFiles = await findMarkdownFilesRecursive(fullPath);
 
         if (!markdownFiles.length) {
-          return { success: false, message: `No .md files found in ${folderPath} (searched recursively)` };
+          return {
+            success: false,
+            message: `No .md files found in ${folderPath} (searched recursively)`,
+          };
         }
 
         const commands = await codebaseDb.getCodebaseCommands(conversation.codebase_id);
