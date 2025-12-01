@@ -25,6 +25,8 @@ Perform a thorough, senior-engineer-level code review:
 
 ## Phase 1: Fetch PR Context
 
+### Make sure you are on the correct branch (PR Branch!)
+
 ### 1.1 Parse Input
 
 Input could be:
