@@ -62,8 +62,8 @@ function setupAuth(): void {
   try {
     fs.writeFileSync(authPath, JSON.stringify(authData, null, 2));
     console.log(`✅ Successfully created auth.json at: ${authPath}`);
-  } catch (error) {
-    console.error(`❌ Failed to write auth.json: ${error}`);
+  } catch (error: unknown) {
+    console.error(`❌ Failed to write auth.json: ${String(error)}`);
     process.exit(1);
   }
 
@@ -86,8 +86,8 @@ network_access = true
     console.log(
       '✅ Codex YOLO mode enabled (approval_policy="never", sandbox_mode="danger-full-access")'
     );
-  } catch (error) {
-    console.error(`❌ Failed to write config.toml: ${error}`);
+  } catch (error: unknown) {
+    console.error(`❌ Failed to write config.toml: ${String(error)}`);
     process.exit(1);
   }
 

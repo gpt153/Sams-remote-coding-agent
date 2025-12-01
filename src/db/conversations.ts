@@ -19,7 +19,7 @@ export async function getOrCreateConversation(
   }
 
   // Determine assistant type from codebase or environment
-  let assistantType = process.env.DEFAULT_AI_ASSISTANT || 'claude';
+  let assistantType = process.env.DEFAULT_AI_ASSISTANT ?? 'claude';
   if (codebaseId) {
     const codebase = await pool.query<{ ai_assistant_type: string }>(
       'SELECT ai_assistant_type FROM remote_agent_codebases WHERE id = $1',
@@ -47,11 +47,11 @@ export async function updateConversation(
   let i = 1;
 
   if (updates.codebase_id !== undefined) {
-    fields.push(`codebase_id = $${i++}`);
+    fields.push(`codebase_id = $${String(i++)}`);
     values.push(updates.codebase_id);
   }
   if (updates.cwd !== undefined) {
-    fields.push(`cwd = $${i++}`);
+    fields.push(`cwd = $${String(i++)}`);
     values.push(updates.cwd);
   }
 
@@ -63,7 +63,7 @@ export async function updateConversation(
   values.push(id);
 
   await pool.query(
-    `UPDATE remote_agent_conversations SET ${fields.join(', ')} WHERE id = $${i}`,
+    `UPDATE remote_agent_conversations SET ${fields.join(', ')} WHERE id = $${String(i)}`,
     values
   );
 }

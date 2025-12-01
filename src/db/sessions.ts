@@ -22,9 +22,9 @@ export async function createSession(data: {
     'INSERT INTO remote_agent_sessions (conversation_id, codebase_id, ai_assistant_type, assistant_session_id) VALUES ($1, $2, $3, $4) RETURNING *',
     [
       data.conversation_id,
-      data.codebase_id || null,
+      data.codebase_id ?? null,
       data.ai_assistant_type,
-      data.assistant_session_id || null,
+      data.assistant_session_id ?? null,
     ]
   );
   return result.rows[0];

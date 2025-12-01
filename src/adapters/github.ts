@@ -165,7 +165,7 @@ export class GitHubAdapter implements IPlatformAdapter {
 
     // issue_comment (covers both issues and PRs)
     if (event.comment) {
-      const number = event.issue?.number || event.pull_request?.number;
+      const number = event.issue?.number ?? event.pull_request?.number;
       if (!number) return null;
       return {
         owner,
@@ -184,7 +184,7 @@ export class GitHubAdapter implements IPlatformAdapter {
         owner,
         repo,
         number: event.issue.number,
-        comment: event.issue.body || '',
+        comment: event.issue.body ?? '',
         eventType: 'issue',
         issue: event.issue,
       };
@@ -196,7 +196,7 @@ export class GitHubAdapter implements IPlatformAdapter {
         owner,
         repo,
         number: event.pull_request.number,
-        comment: event.pull_request.body || '',
+        comment: event.pull_request.body ?? '',
         eventType: 'pull_request',
         pullRequest: event.pull_request,
       };
@@ -223,7 +223,7 @@ export class GitHubAdapter implements IPlatformAdapter {
    * Build conversationId from owner, repo, and number
    */
   private buildConversationId(owner: string, repo: string, number: number): string {
-    return `${owner}/${repo}#${number}`;
+    return `${owner}/${repo}#${String(number)}`;
   }
 
   /**
@@ -260,7 +260,7 @@ export class GitHubAdapter implements IPlatformAdapter {
       }
     } catch {
       console.log(`[GitHub] Cloning repository to ${repoPath}`);
-      const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+      const ghToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
       const repoUrl = `https://github.com/${owner}/${repo}.git`;
       let cloneCommand = `git clone ${repoUrl} ${repoPath}`;
 
@@ -297,7 +297,7 @@ export class GitHubAdapter implements IPlatformAdapter {
         });
 
         await codebaseDb.updateCodebaseCommands(codebaseId, commands);
-        console.log(`[GitHub] Loaded ${files.length} commands from ${folder}`);
+        console.log(`[GitHub] Loaded ${String(files.length)} commands from ${folder}`);
         return;
       } catch {
         continue;
@@ -318,9 +318,7 @@ export class GitHubAdapter implements IPlatformAdapter {
     const repoUrlWithGit = `${repoUrlNoGit}.git`;
 
     let existing = await codebaseDb.findCodebaseByRepoUrl(repoUrlNoGit);
-    if (!existing) {
-      existing = await codebaseDb.findCodebaseByRepoUrl(repoUrlWithGit);
-    }
+    existing ??= await codebaseDb.findCodebaseByRepoUrl(repoUrlWithGit);
 
     if (existing) {
       console.log(`[GitHub] Using existing codebase: ${existing.name} at ${existing.default_cwd}`);
@@ -328,7 +326,7 @@ export class GitHubAdapter implements IPlatformAdapter {
     }
 
     // Use just the repo name (not owner-repo) to match /clone behavior
-    const repoPath = `${process.env.WORKSPACE_PATH || '/workspace'}/${repo}`;
+    const repoPath = `${process.env.WORKSPACE_PATH ?? '/workspace'}/${repo}`;
     const codebase = await codebaseDb.createCodebase({
       name: repo,
       repository_url: repoUrlNoGit, // Store without .git for consistency
@@ -347,13 +345,13 @@ export class GitHubAdapter implements IPlatformAdapter {
     const labels = issue.labels.map(l => l.name).join(', ');
 
     return `[GitHub Issue Context]
-Issue #${issue.number}: "${issue.title}"
+Issue #${String(issue.number)}: "${issue.title}"
 Author: ${issue.user.login}
 Labels: ${labels}
 Status: ${issue.state}
 
 Description:
-${issue.body}
+${issue.body ?? ''}
 
 ---
 
@@ -366,19 +364,19 @@ ${userComment}`;
   private buildPRContext(pr: WebhookEvent['pull_request'], userComment: string): string {
     if (!pr) return userComment;
     const stats = pr.changed_files
-      ? `Changed files: ${pr.changed_files} (+${pr.additions}, -${pr.deletions})`
+      ? `Changed files: ${String(pr.changed_files)} (+${String(pr.additions ?? 0)}, -${String(pr.deletions ?? 0)})`
       : '';
 
     return `[GitHub Pull Request Context]
-PR #${pr.number}: "${pr.title}"
+PR #${String(pr.number)}: "${pr.title}"
 Author: ${pr.user.login}
 Status: ${pr.state}
 ${stats}
 
 Description:
-${pr.body}
+${pr.body ?? ''}
 
-Use 'gh pr diff ${pr.number}' to see detailed changes.
+Use 'gh pr diff ${String(pr.number)}' to see detailed changes.
 
 ---
 
@@ -396,7 +394,7 @@ ${userComment}`;
     }
 
     // 2. Parse event
-    const event: WebhookEvent = JSON.parse(payload);
+    const event = JSON.parse(payload) as WebhookEvent;
     const parsed = this.parseEvent(event);
     if (!parsed) return;
 
@@ -405,7 +403,7 @@ ${userComment}`;
     // 3. Check @mention
     if (!this.hasMention(comment)) return;
 
-    console.log(`[GitHub] Processing ${eventType}: ${owner}/${repo}#${number}`);
+    console.log(`[GitHub] Processing ${eventType}: ${owner}/${repo}#${String(number)}`);
 
     // 4. Build conversationId
     const conversationId = this.buildConversationId(owner, repo, number);
@@ -466,13 +464,13 @@ ${userComment}`;
         if (isFirstCommandInvoke) {
           console.log('[GitHub] Adding issue/PR reference for first /command-invoke');
           if (eventType === 'issue' && issue) {
-            contextToAppend = `GitHub Issue #${issue.number}: "${issue.title}"\nUse 'gh issue view ${issue.number}' for full details if needed.`;
+            contextToAppend = `GitHub Issue #${String(issue.number)}: "${issue.title}"\nUse 'gh issue view ${String(issue.number)}' for full details if needed.`;
           } else if (eventType === 'issue_comment' && issue) {
-            contextToAppend = `GitHub Issue #${issue.number}: "${issue.title}"\nUse 'gh issue view ${issue.number}' for full details if needed.`;
+            contextToAppend = `GitHub Issue #${String(issue.number)}: "${issue.title}"\nUse 'gh issue view ${String(issue.number)}' for full details if needed.`;
           } else if (eventType === 'pull_request' && pullRequest) {
-            contextToAppend = `GitHub Pull Request #${pullRequest.number}: "${pullRequest.title}"\nUse 'gh pr view ${pullRequest.number}' for full details if needed.`;
+            contextToAppend = `GitHub Pull Request #${String(pullRequest.number)}: "${pullRequest.title}"\nUse 'gh pr view ${String(pullRequest.number)}' for full details if needed.`;
           } else if (eventType === 'issue_comment' && pullRequest) {
-            contextToAppend = `GitHub Pull Request #${pullRequest.number}: "${pullRequest.title}"\nUse 'gh pr view ${pullRequest.number}' for full details if needed.`;
+            contextToAppend = `GitHub Pull Request #${String(pullRequest.number)}: "${pullRequest.title}"\nUse 'gh pr view ${String(pullRequest.number)}' for full details if needed.`;
           }
         }
       }

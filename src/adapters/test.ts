@@ -18,11 +18,12 @@ export class TestAdapter implements IPlatformAdapter {
   async sendMessage(conversationId: string, message: string): Promise<void> {
     console.log(`[Test] Sending to ${conversationId}: ${message.substring(0, 100)}...`);
 
+    const msgs = this.messages.get(conversationId) ?? [];
     if (!this.messages.has(conversationId)) {
-      this.messages.set(conversationId, []);
+      this.messages.set(conversationId, msgs);
     }
 
-    this.messages.get(conversationId)!.push({
+    msgs.push({
       conversationId,
       message,
       timestamp: new Date(),
@@ -50,11 +51,12 @@ export class TestAdapter implements IPlatformAdapter {
   // Test-specific methods for HTTP endpoints
 
   async receiveMessage(conversationId: string, message: string): Promise<void> {
+    const msgs = this.messages.get(conversationId) ?? [];
     if (!this.messages.has(conversationId)) {
-      this.messages.set(conversationId, []);
+      this.messages.set(conversationId, msgs);
     }
 
-    this.messages.get(conversationId)!.push({
+    msgs.push({
       conversationId,
       message,
       timestamp: new Date(),
@@ -63,7 +65,7 @@ export class TestAdapter implements IPlatformAdapter {
   }
 
   getMessages(conversationId: string): TestMessage[] {
-    return this.messages.get(conversationId) || [];
+    return this.messages.get(conversationId) ?? [];
   }
 
   getSentMessages(conversationId: string): TestMessage[] {

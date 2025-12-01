@@ -101,10 +101,12 @@ export class CodexClient implements IAssistantClient {
 
         // Handle turn failed events
         if (event.type === 'turn.failed') {
-          console.error('[Codex] Turn failed:', event.error?.message);
+          const errorObj = event.error as { message?: string } | undefined;
+          const errorMessage = errorObj?.message ?? 'Unknown error';
+          console.error('[Codex] Turn failed:', errorMessage);
           yield {
             type: 'system',
-            content: `❌ Turn failed: ${event.error?.message || 'Unknown error'}`,
+            content: `❌ Turn failed: ${errorMessage}`,
           };
           break;
         }
@@ -143,7 +145,7 @@ export class CodexClient implements IAssistantClient {
         if (event.type === 'turn.completed') {
           console.log('[Codex] Turn completed');
           // Yield result with thread ID for persistence
-          yield { type: 'result', sessionId: thread.id || undefined };
+          yield { type: 'result', sessionId: thread.id ?? undefined };
           // CRITICAL: Break out of event loop - turn is complete!
           // Without this, the loop waits for stream to end (causes 90s timeout)
           break;

@@ -84,7 +84,7 @@ export async function handleMessage(
       }
 
       // Read command file
-      const cwd = conversation.cwd || codebase.default_cwd;
+      const cwd = conversation.cwd ?? codebase.default_cwd;
       const commandFilePath = join(cwd, commandDef.path);
 
       try {
@@ -99,7 +99,7 @@ export async function handleMessage(
           console.log('[Orchestrator] Appended issue/PR context to command prompt');
         }
 
-        console.log(`[Orchestrator] Executing '${commandName}' with ${args.length} args`);
+        console.log(`[Orchestrator] Executing '${commandName}' with ${String(args.length)} args`);
       } catch (error) {
         const err = error as Error;
         await platform.sendMessage(conversationId, `Failed to read command file: ${err.message}`);
@@ -122,7 +122,7 @@ export async function handleMessage(
     // Get or create session (handle plan→execute transition)
     let session = await sessionDb.getActiveSession(conversation.id);
     const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
-    const cwd = conversation.cwd || codebase?.default_cwd || '/workspace';
+    const cwd = conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
 
     // Check for plan→execute transition (requires NEW session per PRD)
     // Note: The planning command is named 'plan-feature', not 'plan'
@@ -161,7 +161,7 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(
         promptToSend,
         cwd,
-        session.assistant_session_id || undefined
+        session.assistant_session_id ?? undefined
       )) {
         if (msg.type === 'assistant' && msg.content) {
           await platform.sendMessage(conversationId, msg.content);
@@ -182,7 +182,7 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(
         promptToSend,
         cwd,
-        session.assistant_session_id || undefined
+        session.assistant_session_id ?? undefined
       )) {
         if (msg.type === 'assistant' && msg.content) {
           assistantMessages.push(msg.content);
@@ -198,8 +198,8 @@ export async function handleMessage(
       }
 
       // Log all chunks for observability
-      console.log(`[Orchestrator] Received ${allChunks.length} chunks total`);
-      console.log(`[Orchestrator] Assistant messages: ${assistantMessages.length}`);
+      console.log(`[Orchestrator] Received ${String(allChunks.length)} chunks total`);
+      console.log(`[Orchestrator] Assistant messages: ${String(assistantMessages.length)}`);
 
       // Extract clean summary from the last message
       // Tool indicators from Claude Code: 🔧, 💭, etc.
@@ -231,7 +231,7 @@ export async function handleMessage(
       }
 
       if (finalMessage) {
-        console.log(`[Orchestrator] Sending final message (${finalMessage.length} chars)`);
+        console.log(`[Orchestrator] Sending final message (${String(finalMessage.length)} chars)`);
         await platform.sendMessage(conversationId, finalMessage);
       }
     }

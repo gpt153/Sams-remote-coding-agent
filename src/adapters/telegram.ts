@@ -33,14 +33,14 @@ export class TelegramAdapter implements IPlatformAdapter {
    */
   async sendMessage(chatId: string, message: string): Promise<void> {
     const id = parseInt(chatId);
-    console.log(`[Telegram] sendMessage called, length=${message.length}`);
+    console.log(`[Telegram] sendMessage called, length=${String(message.length)}`);
 
     if (message.length <= MAX_LENGTH) {
       // Short message: try MarkdownV2 formatting
       await this.sendFormattedChunk(id, message);
     } else {
       // Long message: split by paragraphs, format each chunk
-      console.log(`[Telegram] Message too long (${message.length}), splitting by paragraphs`);
+      console.log(`[Telegram] Message too long (${String(message.length)}), splitting by paragraphs`);
       const chunks = this.splitIntoParagraphChunks(message, MAX_LENGTH - 200);
 
       for (const chunk of chunks) {
@@ -76,7 +76,7 @@ export class TelegramAdapter implements IPlatformAdapter {
       chunks.push(currentChunk);
     }
 
-    console.log(`[Telegram] Split into ${chunks.length} paragraph chunks`);
+    console.log(`[Telegram] Split into ${String(chunks.length)} paragraph chunks`);
     return chunks;
   }
 
@@ -86,7 +86,7 @@ export class TelegramAdapter implements IPlatformAdapter {
   private async sendFormattedChunk(id: number, chunk: string): Promise<void> {
     // If chunk is still too long after paragraph splitting, fall back to plain text
     if (chunk.length > MAX_LENGTH) {
-      console.log(`[Telegram] Chunk too long (${chunk.length}), sending as plain text`);
+      console.log(`[Telegram] Chunk too long (${String(chunk.length)}), sending as plain text`);
       const plainText = stripMarkdown(chunk);
       // Split by lines if still too long
       const lines = plainText.split('\n');
@@ -107,7 +107,7 @@ export class TelegramAdapter implements IPlatformAdapter {
     const formatted = convertToTelegramMarkdown(chunk);
     try {
       await this.bot.telegram.sendMessage(id, formatted, { parse_mode: 'MarkdownV2' });
-      console.log(`[Telegram] MarkdownV2 chunk sent (${chunk.length} chars)`);
+      console.log(`[Telegram] MarkdownV2 chunk sent (${String(chunk.length)} chars)`);
     } catch (error) {
       // Fallback to stripped plain text for this chunk
       const err = error as Error;

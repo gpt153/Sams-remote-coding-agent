@@ -10,10 +10,10 @@ export async function createCodebase(data: {
   default_cwd: string;
   ai_assistant_type?: string;
 }): Promise<Codebase> {
-  const assistantType = data.ai_assistant_type || 'claude';
+  const assistantType = data.ai_assistant_type ?? 'claude';
   const result = await pool.query<Codebase>(
     'INSERT INTO remote_agent_codebases (name, repository_url, default_cwd, ai_assistant_type) VALUES ($1, $2, $3, $4) RETURNING *',
-    [data.name, data.repository_url || null, data.default_cwd, assistantType]
+    [data.name, data.repository_url ?? null, data.default_cwd, assistantType]
   );
   return result.rows[0];
 }
@@ -41,7 +41,7 @@ export async function getCodebaseCommands(
   const result = await pool.query<{
     commands: Record<string, { path: string; description: string }>;
   }>('SELECT commands FROM remote_agent_codebases WHERE id = $1', [id]);
-  return result.rows[0]?.commands || {};
+  return result.rows[0]?.commands ?? {};
 }
 
 export async function registerCommand(

@@ -278,6 +278,36 @@ async function sendMessage(conversationId: string, message: string) {
 }
 ```
 
+**SDK Type Patterns:**
+
+When working with external SDKs (Claude Agent SDK, Codex SDK), prefer importing and using SDK types directly:
+
+```typescript
+// ✅ CORRECT - Import SDK types directly
+import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+
+const options: Options = {
+  cwd,
+  permissionMode: 'bypassPermissions',
+  // ...
+};
+
+// Use type assertions for SDK response structures
+const message = msg as { message: { content: ContentBlock[] } };
+```
+
+```typescript
+// ❌ AVOID - Defining duplicate types
+interface MyQueryOptions {  // Don't duplicate SDK types
+  cwd: string;
+  // ...
+}
+const options: MyQueryOptions = { ... };
+query({ prompt, options: options as any });  // Avoid 'as any'
+```
+
+This ensures type compatibility with SDK updates and eliminates `as any` casts.
+
 ### Testing
 
 **Unit Tests:**
