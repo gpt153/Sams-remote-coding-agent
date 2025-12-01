@@ -28,7 +28,10 @@ async function main(): Promise<void> {
   }
 
   // Validate AI assistant credentials (warn if missing, don't fail)
-  const hasClaudeCredentials = process.env.CLAUDE_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  // Using || intentionally: empty string should be treated as missing credential
+  const hasClaudeCredentials = Boolean(
+    process.env.CLAUDE_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN
+  );
   const hasCodexCredentials = process.env.CODEX_ID_TOKEN && process.env.CODEX_ACCESS_TOKEN;
 
   if (!hasClaudeCredentials && !hasCodexCredentials) {
@@ -53,9 +56,9 @@ async function main(): Promise<void> {
   }
 
   // Initialize conversation lock manager
-  const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_CONVERSATIONS || '10');
+  const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_CONVERSATIONS ?? '10');
   const lockManager = new ConversationLockManager(maxConcurrent);
-  console.log(`[App] Lock manager initialized (max concurrent: ${maxConcurrent})`);
+  console.log(`[App] Lock manager initialized (max concurrent: ${String(maxConcurrent)})`);
 
   // Initialize test adapter
   const testAdapter = new TestAdapter();
@@ -72,7 +75,7 @@ async function main(): Promise<void> {
 
   // Setup Express server
   const app = express();
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT ?? 3000;
 
   // GitHub webhook endpoint (must use raw body for signature verification)
   // IMPORTANT: Register BEFORE express.json() to prevent body parsing
@@ -132,7 +135,10 @@ async function main(): Promise<void> {
   // Test adapter endpoints
   app.post('/test/message', async (req, res) => {
     try {
-      const { conversationId, message } = req.body;
+      const { conversationId, message } = req.body as {
+        conversationId?: unknown;
+        message?: unknown;
+      };
       if (typeof conversationId !== 'string' || typeof message !== 'string') {
         return res.status(400).json({ error: 'conversationId and message must be strings' });
       }
@@ -170,15 +176,18 @@ async function main(): Promise<void> {
   });
 
   app.listen(port, () => {
-    console.log(`[Express] Health check server listening on port ${port}`);
+    console.log(`[Express] Health check server listening on port ${String(port)}`);
   });
 
   // Initialize platform adapter (Telegram)
-  const streamingMode = (process.env.TELEGRAM_STREAMING_MODE || 'stream') as 'stream' | 'batch';
+  const streamingMode = (process.env.TELEGRAM_STREAMING_MODE ?? 'stream') as 'stream' | 'batch';
+  // TELEGRAM_BOT_TOKEN is validated above in required env vars check
   const telegram = new TelegramAdapter(process.env.TELEGRAM_BOT_TOKEN!, streamingMode);
 
   // Handle text messages
-  telegram.getBot().on('text', async ctx => {
+  // Note: 'text' listener is deprecated in Telegraf v5, but still functional
+  telegram.getBot().on('message', async ctx => {
+    if (!('text' in ctx.message)) return;
     const conversationId = telegram.getConversationId(ctx);
     const message = ctx.message.text;
 
@@ -201,7 +210,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     console.log('[App] Shutting down gracefully...');
     telegram.stop();
-    pool.end().then(() => {
+    void pool.end().then(() => {
       console.log('[Database] Connection pool closed');
       process.exit(0);
     });
@@ -212,7 +221,7 @@ async function main(): Promise<void> {
 
   console.log('[App] Remote Coding Agent is ready!');
   console.log('[App] Send messages to your Telegram bot to get started');
-  console.log('[App] Test endpoint available: POST http://localhost:' + port + '/test/message');
+  console.log('[App] Test endpoint available: POST http://localhost:' + String(port) + '/test/message');
 }
 
 // Run the application

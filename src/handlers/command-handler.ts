@@ -32,7 +32,7 @@ async function findMarkdownFilesRecursive(
       continue;
     }
 
-    if (entry.isDirectory?.()) {
+    if (entry.isDirectory()) {
       // Recurse into subdirectory
       const subResults = await findMarkdownFilesRecursive(rootPath, join(relativePath, entry.name));
       results.push(...subResults);
@@ -50,7 +50,7 @@ async function findMarkdownFilesRecursive(
 
 export function parseCommand(text: string): { command: string; args: string[] } {
   // Match quoted strings or non-whitespace sequences
-  const matches = text.match(/"[^"]+"|'[^']+'|\S+/g) || [];
+  const matches = text.match(/"[^"]+"|'[^']+'|\S+/g) ?? [];
 
   if (matches.length === 0 || !matches[0]) {
     return { command: '', args: [] };
@@ -115,11 +115,11 @@ Session:
         msg += '\n\nNo codebase configured. Use /clone <repo-url> to get started.';
       }
 
-      msg += `\n\nCurrent Working Directory: ${conversation.cwd || 'Not set'}`;
+      msg += `\n\nCurrent Working Directory: ${conversation.cwd ?? 'Not set'}`;
 
       const session = await sessionDb.getActiveSession(conversation.id);
       if (session?.id) {
-        msg += `\nActive Session: ${session.id.substring(0, 8)}...`;
+        msg += `\nActive Session: ${session.id.slice(0, 8)}...`;
       }
 
       return { success: true, message: msg };
@@ -128,7 +128,7 @@ Session:
     case 'getcwd':
       return {
         success: true,
-        message: `Current working directory: ${conversation.cwd || 'Not set'}`,
+        message: `Current working directory: ${conversation.cwd ?? 'Not set'}`,
       };
 
     case 'setcwd': {
@@ -139,7 +139,7 @@ Session:
       const resolvedCwd = resolve(newCwd);
 
       // Validate path is within workspace to prevent path traversal
-      const workspacePath = process.env.WORKSPACE_PATH || '/workspace';
+      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
       if (!isPathWithinWorkspace(resolvedCwd)) {
         return { success: false, message: `Path must be within ${workspacePath} directory` };
       }
@@ -188,9 +188,9 @@ Session:
         workingUrl = normalizedUrl.replace('git@github.com:', 'https://github.com/');
       }
 
-      const repoName = workingUrl.split('/').pop()?.replace('.git', '') || 'unknown';
+      const repoName = workingUrl.split('/').pop()?.replace('.git', '') ?? 'unknown';
       // Use WORKSPACE_PATH env var for flexibility (local dev vs Docker)
-      const workspacePath = process.env.WORKSPACE_PATH || '/workspace';
+      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
       const targetPath = `${workspacePath}/${repoName}`;
 
       try {
@@ -369,8 +369,8 @@ Session:
 
       const [commandName, commandPath, ...textParts] = args;
       const commandText = textParts.join(' ');
-      const workspacePath = process.env.WORKSPACE_PATH || '/workspace';
-      const basePath = conversation.cwd || workspacePath;
+      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const basePath = conversation.cwd ?? workspacePath;
       const fullPath = resolve(basePath, commandPath);
 
       // Validate path is within workspace to prevent path traversal
@@ -408,8 +408,8 @@ Session:
       }
 
       const folderPath = args.join(' ');
-      const workspacePath = process.env.WORKSPACE_PATH || '/workspace';
-      const basePath = conversation.cwd || workspacePath;
+      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const basePath = conversation.cwd ?? workspacePath;
       const fullPath = resolve(basePath, folderPath);
 
       // Validate path is within workspace to prevent path traversal
@@ -442,7 +442,7 @@ Session:
 
         return {
           success: true,
-          message: `Loaded ${markdownFiles.length} commands recursively: ${markdownFiles.map(f => f.commandName).join(', ')}`,
+          message: `Loaded ${String(markdownFiles.length)} commands recursively: ${markdownFiles.map(f => f.commandName).join(', ')}`,
         };
       } catch (error) {
         const err = error as Error;
@@ -457,7 +457,7 @@ Session:
       }
 
       const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
-      const commands = codebase?.commands || {};
+      const commands = codebase?.commands ?? {};
 
       if (!Object.keys(commands).length) {
         return {
@@ -474,7 +474,7 @@ Session:
     }
 
     case 'repos': {
-      const workspacePath = process.env.WORKSPACE_PATH || '/workspace';
+      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
 
       try {
         const entries = await readdir(workspacePath, { withFileTypes: true });
@@ -487,7 +487,7 @@ Session:
           };
         }
 
-        const currentCwd = conversation.cwd || '';
+        const currentCwd = conversation.cwd ?? '';
         let msg = 'Workspace Repositories:\n\n';
 
         folders.forEach(folder => {

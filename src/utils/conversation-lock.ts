@@ -50,7 +50,7 @@ export class ConversationLockManager {
     // Check if at max capacity - queue if yes
     if (this.activeConversations.size >= this.maxConcurrent) {
       console.log(
-        `[ConversationLock] At max capacity (${this.maxConcurrent}), queuing ${conversationId}`
+        `[ConversationLock] At max capacity (${String(this.maxConcurrent)}), queuing ${conversationId}`
       );
       this.queueMessage(conversationId, handler);
       return;
@@ -97,15 +97,16 @@ export class ConversationLockManager {
    * @param handler - Async function to queue
    */
   private queueMessage(conversationId: string, handler: () => Promise<void>): void {
+    const queue = this.messageQueues.get(conversationId) ?? [];
     if (!this.messageQueues.has(conversationId)) {
-      this.messageQueues.set(conversationId, []);
+      this.messageQueues.set(conversationId, queue);
     }
-    this.messageQueues.get(conversationId)!.push({
+    queue.push({
       handler,
       timestamp: Date.now(),
     });
     console.log(`[ConversationLock] Queued message for ${conversationId}`, {
-      queueLength: this.messageQueues.get(conversationId)!.length,
+      queueLength: queue.length,
     });
   }
 
@@ -120,7 +121,8 @@ export class ConversationLockManager {
       return;
     }
 
-    const next = queue.shift()!;
+    const next = queue.shift();
+    if (!next) return;
     const waitTime = Date.now() - next.timestamp;
     console.log('[ConversationLock] Processing queued message', {
       conversationId,

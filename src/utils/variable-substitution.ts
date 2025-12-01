@@ -20,7 +20,7 @@ export function substituteVariables(
 
   // Replace positional args $1-$9
   args.forEach((arg, index) => {
-    result = result.replace(new RegExp(`\\$${index + 1}`, 'g'), arg);
+    result = result.replace(new RegExp(`\\$${String(index + 1)}`, 'g'), arg);
   });
 
   // Replace $ARGUMENTS with all arguments as single string

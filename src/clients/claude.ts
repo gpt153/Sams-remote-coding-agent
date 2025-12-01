@@ -1,16 +1,25 @@
 /**
  * Claude Agent SDK wrapper
  * Provides async generator interface for streaming Claude responses
+ *
+ * Type Safety Pattern:
+ * - Uses `Options` type from SDK for query configuration
+ * - SDK message types (SDKMessage, SDKAssistantMessage, etc.) have strict
+ *   type checking that requires explicit type handling for content blocks
+ * - Content blocks are typed via inline assertions for clarity
  */
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { IAssistantClient, MessageChunk } from '../types';
 
-interface ClaudeQueryOptions {
-  cwd: string;
-  env: Record<string, string | undefined>;
-  permissionMode: 'bypassPermissions' | 'prompt' | 'deny';
-  stderr: (data: string) => void;
-  resume?: string;
+/**
+ * Content block type for assistant messages
+ * Represents text or tool_use blocks from Claude API responses
+ */
+interface ContentBlock {
+  type: 'text' | 'tool_use';
+  text?: string;
+  name?: string;
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -29,7 +38,7 @@ export class ClaudeClient implements IAssistantClient {
     cwd: string,
     resumeSessionId?: string
   ): AsyncGenerator<MessageChunk> {
-    const options: ClaudeQueryOptions = {
+    const options: Options = {
       cwd,
       env: {
         PATH: process.env.PATH,
@@ -70,30 +79,32 @@ export class ClaudeClient implements IAssistantClient {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for await (const msg of query({ prompt, options: options as any })) {
+      for await (const msg of query({ prompt, options })) {
         if (msg.type === 'assistant') {
           // Process assistant message content blocks
-          const message = msg.message;
+          // Type assertion needed: SDK's strict types require explicit handling
+          const message = msg as { message: { content: ContentBlock[] } };
+          const content = message.message.content;
 
-          for (const block of message.content) {
+          for (const block of content) {
             // Text blocks - assistant responses
             if (block.type === 'text' && block.text) {
               yield { type: 'assistant', content: block.text };
             }
 
             // Tool use blocks - tool calls
-            else if (block.type === 'tool_use') {
+            else if (block.type === 'tool_use' && block.name) {
               yield {
                 type: 'tool',
                 toolName: block.name,
-                toolInput: block.input || {},
+                toolInput: block.input ?? {},
               };
             }
           }
         } else if (msg.type === 'result') {
           // Extract session ID for persistence
-          yield { type: 'result', sessionId: msg.session_id };
+          const resultMsg = msg as { session_id?: string };
+          yield { type: 'result', sessionId: resultMsg.session_id };
         }
         // Ignore other message types (system, thinking, tool_result, etc.)
       }

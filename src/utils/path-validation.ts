@@ -3,7 +3,7 @@
  */
 import { resolve } from 'path';
 
-const WORKSPACE_ROOT = process.env.WORKSPACE_PATH || '/workspace';
+const WORKSPACE_ROOT = process.env.WORKSPACE_PATH ?? '/workspace';
 
 /**
  * Validates that a resolved path stays within the allowed workspace directory.
