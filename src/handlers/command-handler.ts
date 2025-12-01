@@ -2,7 +2,7 @@
  * Command handler for slash commands
  * Handles deterministic operations without AI
  */
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile, readdir, access } from 'fs/promises';
 import { join, basename, resolve } from 'path';
@@ -12,7 +12,6 @@ import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import { isPathWithinWorkspace } from '../utils/path-validation';
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 /**
@@ -280,11 +279,11 @@ Session:
           console.log('[Clone] Using authenticated GitHub clone');
         }
 
-        await execAsync(`git clone ${cloneUrl} ${targetPath}`);
+        await execFileAsync('git', ['clone', cloneUrl, targetPath]);
 
         // Add the cloned repository to git safe.directory to prevent ownership errors
         // This is needed because we run as non-root user but git might see different ownership
-        await execAsync(`git config --global --add safe.directory ${targetPath}`);
+        await execFileAsync('git', ['config', '--global', '--add', 'safe.directory', targetPath]);
         console.log(`[Clone] Added ${targetPath} to git safe.directory`);
 
         // Auto-detect assistant type based on folder structure
