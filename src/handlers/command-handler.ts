@@ -187,12 +187,61 @@ Session:
         // Check if target directory already exists
         try {
           await access(targetPath);
+
+          // Directory exists - try to find existing codebase by repo URL
+          // Check both with and without .git suffix (per github.ts pattern)
+          const urlNoGit = workingUrl.replace(/\.git$/, '');
+          const urlWithGit = urlNoGit + '.git';
+
+          const existingCodebase =
+            (await codebaseDb.findCodebaseByRepoUrl(urlNoGit)) ??
+            (await codebaseDb.findCodebaseByRepoUrl(urlWithGit));
+
+          if (existingCodebase) {
+            // Link conversation to existing codebase
+            await db.updateConversation(conversation.id, {
+              codebase_id: existingCodebase.id,
+              cwd: targetPath,
+            });
+
+            // Reset session when switching codebases
+            const session = await sessionDb.getActiveSession(conversation.id);
+            if (session) {
+              await sessionDb.deactivateSession(session.id);
+            }
+
+            // Check for command folders (same logic as successful clone)
+            let commandFolder: string | null = null;
+            for (const folder of ['.claude/commands', '.agents/commands']) {
+              try {
+                await access(join(targetPath, folder));
+                commandFolder = folder;
+                break;
+              } catch {
+                /* ignore */
+              }
+            }
+
+            let responseMessage = `Repository already cloned.\n\nLinked to existing codebase: ${existingCodebase.name}\nPath: ${targetPath}\n\nSession reset - starting fresh on next message.`;
+
+            if (commandFolder) {
+              responseMessage += `\n\n📁 Found: ${commandFolder}/\nUse /load-commands ${commandFolder} to register commands.`;
+            }
+
+            return {
+              success: true,
+              message: responseMessage,
+              modified: true,
+            };
+          }
+
+          // Directory exists but no codebase found
           return {
             success: false,
-            message: `Directory already exists: ${targetPath}\n\nUse a different repository or remove the existing directory first.`,
+            message: `Directory already exists: ${targetPath}\n\nNo matching codebase found in database. Options:\n- Remove the directory and re-clone\n- Use /setcwd ${targetPath} (limited functionality)`,
           };
         } catch {
-          // Directory doesn't exist, which is what we want
+          // Directory doesn't exist, proceed with clone
         }
 
         console.log(`[Clone] Cloning ${workingUrl} to ${targetPath}`);
