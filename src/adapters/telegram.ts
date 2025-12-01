@@ -111,10 +111,10 @@ export class TelegramAdapter implements IPlatformAdapter {
     } catch (error) {
       // Fallback to stripped plain text for this chunk
       const err = error as Error;
-      console.warn(`[Telegram] MarkdownV2 failed for chunk, using plain text:`, err.message);
-      console.warn(`[Telegram] Original chunk (first 500 chars):`, chunk.substring(0, 500));
-      console.warn(`[Telegram] Formatted chunk (first 500 chars):`, formatted.substring(0, 500));
-      console.warn(`[Telegram] Formatted chunk (around byte 4059):`, formatted.substring(4000, 4100));
+      console.warn('[Telegram] MarkdownV2 failed for chunk, using plain text:', err.message);
+      console.warn('[Telegram] Original chunk (first 500 chars):', chunk.substring(0, 500));
+      console.warn('[Telegram] Formatted chunk (first 500 chars):', formatted.substring(0, 500));
+      console.warn('[Telegram] Formatted chunk (around byte 4059):', formatted.substring(4000, 4100));
       await this.bot.telegram.sendMessage(id, stripMarkdown(chunk));
     }
   }
