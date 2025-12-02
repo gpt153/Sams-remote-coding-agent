@@ -18,6 +18,23 @@ describe('conversations', () => {
   });
 
   describe('getOrCreateConversation', () => {
+    let originalDefaultAiAssistant: string | undefined;
+
+    beforeEach(() => {
+      // Save and clear env var to ensure test isolation
+      originalDefaultAiAssistant = process.env.DEFAULT_AI_ASSISTANT;
+      delete process.env.DEFAULT_AI_ASSISTANT;
+    });
+
+    afterEach(() => {
+      // Restore original env var value
+      if (originalDefaultAiAssistant === undefined) {
+        delete process.env.DEFAULT_AI_ASSISTANT;
+      } else {
+        process.env.DEFAULT_AI_ASSISTANT = originalDefaultAiAssistant;
+      }
+    });
+
     const existingConversation: Conversation = {
       id: 'conv-123',
       platform_type: 'telegram',
@@ -96,7 +113,7 @@ describe('conversations', () => {
     });
 
     test('uses DEFAULT_AI_ASSISTANT env var when set', async () => {
-      const originalEnv = process.env.DEFAULT_AI_ASSISTANT;
+      // Set env var for this test (afterEach will restore original)
       process.env.DEFAULT_AI_ASSISTANT = 'codex';
 
       const newConversation: Conversation = {
@@ -116,13 +133,6 @@ describe('conversations', () => {
         'INSERT INTO remote_agent_conversations (platform_type, platform_conversation_id, ai_assistant_type) VALUES ($1, $2, $3) RETURNING *',
         ['telegram', 'chat-789', 'codex']
       );
-
-      // Restore env
-      if (originalEnv === undefined) {
-        delete process.env.DEFAULT_AI_ASSISTANT;
-      } else {
-        process.env.DEFAULT_AI_ASSISTANT = originalEnv;
-      }
     });
 
     test('falls back to claude when codebase not found', async () => {
