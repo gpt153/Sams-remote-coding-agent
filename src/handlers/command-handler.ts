@@ -10,6 +10,7 @@ import { Conversation, CommandResult } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
+import * as templateDb from '../db/command-templates';
 import { isPathWithinWorkspace } from '../utils/path-validation';
 
 const execFileAsync = promisify(execFile);
@@ -80,7 +81,13 @@ export async function handleCommand(
         success: true,
         message: `Available Commands:
 
-Command Management:
+Command Templates (global):
+  /<name> [args] - Invoke a template directly
+  /templates - List all templates
+  /template-add <name> <path> - Add template from file
+  /template-delete <name> - Remove a template
+
+Codebase Commands (per-project):
   /command-set <name> <path> [text] - Register command
   /load-commands <folder> - Bulk load (recursive)
   /command-invoke <name> [args] - Execute
@@ -738,6 +745,80 @@ Session:
         console.error('[Command] repo-remove failed:', err);
         return { success: false, message: `Failed to remove: ${err.message}` };
       }
+    }
+
+    case 'template-add': {
+      if (args.length < 2) {
+        return { success: false, message: 'Usage: /template-add <name> <file-path>' };
+      }
+      if (!conversation.cwd) {
+        return { success: false, message: 'No working directory set. Use /clone or /setcwd first.' };
+      }
+
+      const [templateName, ...pathParts] = args;
+      const filePath = pathParts.join(' ');
+      const fullPath = resolve(conversation.cwd, filePath);
+
+      try {
+        const content = await readFile(fullPath, 'utf-8');
+
+        // Extract description from frontmatter if present
+        const frontmatterMatch = /^---\n([\s\S]*?)\n---/.exec(content);
+        let description: string | undefined;
+        if (frontmatterMatch) {
+          const descMatch = /description:\s*(.+)/.exec(frontmatterMatch[1]);
+          description = descMatch?.[1]?.trim();
+        }
+
+        await templateDb.upsertTemplate({
+          name: templateName,
+          description: description ?? `From ${filePath}`,
+          content,
+        });
+
+        return {
+          success: true,
+          message: `Template '${templateName}' saved!\n\nUse it with: /${templateName} [args]`,
+        };
+      } catch (error) {
+        const err = error as Error;
+        return { success: false, message: `Failed to read file: ${err.message}` };
+      }
+    }
+
+    case 'template-list':
+    case 'templates': {
+      const templates = await templateDb.getAllTemplates();
+
+      if (templates.length === 0) {
+        return {
+          success: true,
+          message: 'No command templates registered.\n\nUse /template-add <name> <file-path> to add one.',
+        };
+      }
+
+      let msg = 'Command Templates:\n\n';
+      for (const t of templates) {
+        msg += `/${t.name}`;
+        if (t.description) {
+          msg += ` - ${t.description}`;
+        }
+        msg += '\n';
+      }
+      msg += '\nUse /<name> [args] to invoke any template.';
+      return { success: true, message: msg };
+    }
+
+    case 'template-delete': {
+      if (args.length < 1) {
+        return { success: false, message: 'Usage: /template-delete <name>' };
+      }
+
+      const deleted = await templateDb.deleteTemplate(args[0]);
+      if (deleted) {
+        return { success: true, message: `Template '${args[0]}' deleted.` };
+      }
+      return { success: false, message: `Template '${args[0]}' not found.` };
     }
 
     default:

@@ -8,6 +8,7 @@ import { IPlatformAdapter } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
+import * as templateDb from '../db/command-templates';
 import * as commandHandler from '../handlers/command-handler';
 import { formatToolCall } from '../utils/tool-formatter';
 import { substituteVariables } from '../utils/variable-substitution';
@@ -26,9 +27,34 @@ export async function handleMessage(
     // Get or create conversation
     let conversation = await db.getOrCreateConversation(platform.getPlatformType(), conversationId);
 
-    // Handle slash commands (except /command-invoke which needs AI)
+    // Parse command upfront if it's a slash command
+    let promptToSend = message;
+    let commandName: string | null = null;
+
     if (message.startsWith('/')) {
-      if (!message.startsWith('/command-invoke')) {
+      const { command, args } = commandHandler.parseCommand(message);
+
+      // List of deterministic commands (handled by command-handler, no AI)
+      const deterministicCommands = [
+        'help',
+        'status',
+        'getcwd',
+        'setcwd',
+        'clone',
+        'repos',
+        'repo',
+        'repo-remove',
+        'reset',
+        'command-set',
+        'load-commands',
+        'commands',
+        'template-add',
+        'template-list',
+        'templates',
+        'template-delete',
+      ];
+
+      if (deterministicCommands.includes(command)) {
         console.log(`[Orchestrator] Processing slash command: ${message}`);
         const result = await commandHandler.handleCommand(conversation, message);
         await platform.sendMessage(conversationId, result.message);
@@ -42,68 +68,84 @@ export async function handleMessage(
         }
         return;
       }
-      // /command-invoke falls through to AI handling
-    }
 
-    // Parse /command-invoke if applicable
-    let promptToSend = message;
-    let commandName: string | null = null;
-
-    if (message.startsWith('/command-invoke')) {
-      // Use parseCommand to properly handle quoted arguments
-      // e.g., /command-invoke plan "here is the request" → args = ['plan', 'here is the request']
-      const { args: parsedArgs } = commandHandler.parseCommand(message);
-
-      if (parsedArgs.length < 1) {
-        await platform.sendMessage(conversationId, 'Usage: /command-invoke <name> [args...]');
-        return;
-      }
-
-      commandName = parsedArgs[0];
-      const args = parsedArgs.slice(1);
-
-      if (!conversation.codebase_id) {
-        await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');
-        return;
-      }
-
-      // Look up command definition
-      const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
-      if (!codebase) {
-        await platform.sendMessage(conversationId, 'Codebase not found.');
-        return;
-      }
-
-      const commandDef = codebase.commands[commandName];
-      if (!commandDef) {
-        await platform.sendMessage(
-          conversationId,
-          `Command '${commandName}' not found. Use /commands to see available.`
-        );
-        return;
-      }
-
-      // Read command file
-      const cwd = conversation.cwd ?? codebase.default_cwd;
-      const commandFilePath = join(cwd, commandDef.path);
-
-      try {
-        const commandText = await readFile(commandFilePath, 'utf-8');
-
-        // Substitute variables (no metadata needed - file-based workflow)
-        promptToSend = substituteVariables(commandText, args);
-
-        // Append issue/PR context AFTER command loading (if provided)
-        if (issueContext) {
-          promptToSend = promptToSend + '\n\n---\n\n' + issueContext;
-          console.log('[Orchestrator] Appended issue/PR context to command prompt');
+      // Handle /command-invoke (codebase-specific commands)
+      if (command === 'command-invoke') {
+        if (args.length < 1) {
+          await platform.sendMessage(conversationId, 'Usage: /command-invoke <name> [args...]');
+          return;
         }
 
-        console.log(`[Orchestrator] Executing '${commandName}' with ${String(args.length)} args`);
-      } catch (error) {
-        const err = error as Error;
-        await platform.sendMessage(conversationId, `Failed to read command file: ${err.message}`);
-        return;
+        commandName = args[0];
+        const commandArgs = args.slice(1);
+
+        if (!conversation.codebase_id) {
+          await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');
+          return;
+        }
+
+        // Look up command definition
+        const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
+        if (!codebase) {
+          await platform.sendMessage(conversationId, 'Codebase not found.');
+          return;
+        }
+
+        const commandDef = codebase.commands[commandName];
+        if (!commandDef) {
+          await platform.sendMessage(
+            conversationId,
+            `Command '${commandName}' not found. Use /commands to see available.`
+          );
+          return;
+        }
+
+        // Read command file
+        const cwd = conversation.cwd ?? codebase.default_cwd;
+        const commandFilePath = join(cwd, commandDef.path);
+
+        try {
+          const commandText = await readFile(commandFilePath, 'utf-8');
+
+          // Substitute variables (no metadata needed - file-based workflow)
+          promptToSend = substituteVariables(commandText, commandArgs);
+
+          // Append issue/PR context AFTER command loading (if provided)
+          if (issueContext) {
+            promptToSend = promptToSend + '\n\n---\n\n' + issueContext;
+            console.log('[Orchestrator] Appended issue/PR context to command prompt');
+          }
+
+          console.log(
+            `[Orchestrator] Executing '${commandName}' with ${String(commandArgs.length)} args`
+          );
+        } catch (error) {
+          const err = error as Error;
+          await platform.sendMessage(conversationId, `Failed to read command file: ${err.message}`);
+          return;
+        }
+      } else {
+        // Check if it's a global template command
+        const template = await templateDb.getTemplate(command);
+        if (template) {
+          console.log(`[Orchestrator] Found template: ${command}`);
+          commandName = command;
+          promptToSend = substituteVariables(template.content, args);
+
+          if (issueContext) {
+            promptToSend = promptToSend + '\n\n---\n\n' + issueContext;
+            console.log('[Orchestrator] Appended issue/PR context to template prompt');
+          }
+
+          console.log(`[Orchestrator] Executing template '${command}' with ${String(args.length)} args`);
+        } else {
+          // Unknown command
+          await platform.sendMessage(
+            conversationId,
+            `Unknown command: /${command}\n\nType /help for available commands or /templates for command templates.`
+          );
+          return;
+        }
       }
     } else {
       // Regular message - require codebase
@@ -121,7 +163,9 @@ export async function handleMessage(
 
     // Get or create session (handle plan→execute transition)
     let session = await sessionDb.getActiveSession(conversation.id);
-    const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
+    const codebase = conversation.codebase_id
+      ? await codebaseDb.getCodebase(conversation.codebase_id)
+      : null;
     const cwd = conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
 
     // Check for plan→execute transition (requires NEW session per PRD)
@@ -138,14 +182,14 @@ export async function handleMessage(
 
       session = await sessionDb.createSession({
         conversation_id: conversation.id,
-        codebase_id: conversation.codebase_id,
+        codebase_id: conversation.codebase_id ?? undefined,
         ai_assistant_type: conversation.ai_assistant_type,
       });
     } else if (!session) {
       console.log('[Orchestrator] Creating new session');
       session = await sessionDb.createSession({
         conversation_id: conversation.id,
-        codebase_id: conversation.codebase_id,
+        codebase_id: conversation.codebase_id ?? undefined,
         ai_assistant_type: conversation.ai_assistant_type,
       });
     } else {

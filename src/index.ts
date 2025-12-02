@@ -16,6 +16,7 @@ import { handleMessage } from './orchestrator/orchestrator';
 import { pool } from './db/connection';
 import { ConversationLockManager } from './utils/conversation-lock';
 import { classifyAndFormatError } from './utils/error-formatter';
+import { seedDefaultCommands } from './scripts/seed-commands';
 
 async function main(): Promise<void> {
   console.log('[App] Starting Remote Coding Agent (Telegram + Claude MVP)');
@@ -56,6 +57,9 @@ async function main(): Promise<void> {
     console.error('[Database] Connection failed:', error);
     process.exit(1);
   }
+
+  // Seed default command templates
+  await seedDefaultCommands();
 
   // Initialize conversation lock manager
   const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_CONVERSATIONS ?? '10');

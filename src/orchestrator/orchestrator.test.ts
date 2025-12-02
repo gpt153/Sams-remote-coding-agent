@@ -9,6 +9,7 @@ const mockCreateSession = jest.fn();
 const mockUpdateSession = jest.fn();
 const mockDeactivateSession = jest.fn();
 const mockUpdateSessionMetadata = jest.fn();
+const mockGetTemplate = jest.fn();
 const mockHandleCommand = jest.fn();
 const mockParseCommand = jest.fn();
 const mockGetAssistantClient = jest.fn();
@@ -28,6 +29,10 @@ jest.mock('../db/sessions', () => ({
   updateSession: mockUpdateSession,
   deactivateSession: mockDeactivateSession,
   updateSessionMetadata: mockUpdateSessionMetadata,
+}));
+
+jest.mock('../db/command-templates', () => ({
+  getTemplate: mockGetTemplate,
 }));
 
 jest.mock('../handlers/command-handler', () => ({
@@ -99,10 +104,11 @@ describe('orchestrator', () => {
     mockGetCodebase.mockResolvedValue(mockCodebase);
     mockGetActiveSession.mockResolvedValue(null);
     mockCreateSession.mockResolvedValue(mockSession);
+    mockGetTemplate.mockResolvedValue(null); // No templates by default
     mockGetAssistantClient.mockReturnValue(mockClient);
     mockParseCommand.mockImplementation((message: string) => {
       const parts = message.split(/\s+/);
-      return { command: parts[0], args: parts.slice(1) };
+      return { command: parts[0].substring(1), args: parts.slice(1) };
     });
   });
 
@@ -132,7 +138,7 @@ describe('orchestrator', () => {
         ...mockConversation,
         codebase_id: null,
       });
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
 
       await handleMessage(platform, 'chat-456', '/command-invoke plan');
 
@@ -143,7 +149,7 @@ describe('orchestrator', () => {
     });
 
     test('sends error when no command name provided', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: [] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: [] });
 
       await handleMessage(platform, 'chat-456', '/command-invoke');
 
@@ -154,7 +160,7 @@ describe('orchestrator', () => {
     });
 
     test('sends error when command not found', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['unknown'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['unknown'] });
 
       await handleMessage(platform, 'chat-456', '/command-invoke unknown');
 
@@ -166,7 +172,7 @@ describe('orchestrator', () => {
 
     test('sends error when codebase not found', async () => {
       mockGetCodebase.mockResolvedValue(null);
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
 
       await handleMessage(platform, 'chat-456', '/command-invoke plan');
 
@@ -174,7 +180,7 @@ describe('orchestrator', () => {
     });
 
     test('sends error when file read fails', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockRejectedValue(new Error('ENOENT: no such file'));
 
       await handleMessage(platform, 'chat-456', '/command-invoke plan');
@@ -187,7 +193,7 @@ describe('orchestrator', () => {
 
     test('reads command file and sends to AI', async () => {
       mockParseCommand.mockReturnValue({
-        command: '/command-invoke',
+        command: 'command-invoke',
         args: ['plan', 'Add dark mode'],
       });
       mockReadFile.mockResolvedValue('Plan the following: $1');
@@ -211,7 +217,7 @@ describe('orchestrator', () => {
     });
 
     test('appends issueContext after command text', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Command text here');
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'result', sessionId: 'session-id' };
@@ -245,7 +251,7 @@ describe('orchestrator', () => {
 
   describe('session management', () => {
     test('creates new session when none exists', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockGetActiveSession.mockResolvedValue(null);
       mockClient.sendQuery.mockImplementation(async function* () {
@@ -262,7 +268,7 @@ describe('orchestrator', () => {
     });
 
     test('resumes existing session', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockGetActiveSession.mockResolvedValue(mockSession);
       mockClient.sendQuery.mockImplementation(async function* () {
@@ -280,7 +286,7 @@ describe('orchestrator', () => {
     });
 
     test('creates new session for plan-feature→execute transition', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['execute'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['execute'] });
       mockReadFile.mockResolvedValue('Execute command');
       mockGetActiveSession.mockResolvedValue({
         ...mockSession,
@@ -297,7 +303,7 @@ describe('orchestrator', () => {
     });
 
     test('updates session with AI session ID', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'result', sessionId: 'ai-session-123' };
@@ -309,7 +315,7 @@ describe('orchestrator', () => {
     });
 
     test('tracks lastCommand in metadata', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'result', sessionId: 'session-id' };
@@ -325,7 +331,7 @@ describe('orchestrator', () => {
 
   describe('streaming modes', () => {
     beforeEach(() => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
     });
 
@@ -430,7 +436,7 @@ describe('orchestrator', () => {
 
   describe('cwd resolution', () => {
     test('uses conversation cwd when set', async () => {
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'result', sessionId: 'session-id' };
@@ -450,7 +456,7 @@ describe('orchestrator', () => {
         ...mockConversation,
         cwd: null,
       });
-      mockParseCommand.mockReturnValue({ command: '/command-invoke', args: ['plan'] });
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
       mockReadFile.mockResolvedValue('Plan command');
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'result', sessionId: 'session-id' };

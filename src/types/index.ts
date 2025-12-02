@@ -36,6 +36,15 @@ export interface Session {
   ended_at: Date | null;
 }
 
+export interface CommandTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  content: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface CommandResult {
   success: boolean;
   message: string;
