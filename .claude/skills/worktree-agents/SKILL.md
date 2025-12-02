@@ -26,6 +26,36 @@ The user wants to:
 3. **Monitor**: See what's running and what state each worktree is in
 4. **Cleanup**: Remove worktrees after PRs are merged
 
+## CRITICAL: Directory Structure
+
+**All worktrees MUST be created in the `worktrees/` subdirectory** relative to the repo root.
+
+```
+repo-root/
+├── worktrees/                          # All worktrees go here
+│   ├── feature/auth/                   # Branch: feature/auth
+│   ├── feature/payments/               # Branch: feature/payments
+│   └── fix/login-bug/                  # Branch: fix/login-bug
+├── src/
+├── .claude/
+└── ...
+```
+
+**NEVER create worktrees as sibling directories** (e.g., `../repo-feature-auth`). This breaks:
+- Status tracking
+- Cleanup scripts
+- Registry path matching
+
+**Correct:**
+```bash
+git worktree add worktrees/feature/auth -b feature/auth
+```
+
+**Wrong:**
+```bash
+git worktree add ../repo-feature-auth -b feature/auth  # NO!
+```
+
 ## Architecture
 
 ```

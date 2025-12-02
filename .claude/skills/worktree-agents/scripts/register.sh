@@ -24,6 +24,22 @@ fi
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 REGISTRY="$REPO_ROOT/.claude/worktree-registry.json"
 
+# Normalize path to relative (remove repo root prefix if absolute)
+if [[ "$PATH_WT" == /* ]]; then
+    # Absolute path - try to make it relative to repo root
+    if [[ "$PATH_WT" == "$REPO_ROOT/"* ]]; then
+        PATH_WT="${PATH_WT#$REPO_ROOT/}"
+    else
+        echo "Warning: Path '$PATH_WT' is outside repo root. Using absolute path."
+    fi
+fi
+
+# Warn if not in worktrees/ directory
+if [[ "$PATH_WT" != worktrees/* ]]; then
+    echo "Warning: Path '$PATH_WT' is not in worktrees/ directory."
+    echo "Recommended: worktrees/<branch-name>"
+fi
+
 # Check jq is available
 if ! command -v jq &> /dev/null; then
     echo "Error: jq is required. Install with: brew install jq"

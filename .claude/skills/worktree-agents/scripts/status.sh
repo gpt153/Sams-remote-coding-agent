@@ -101,7 +101,13 @@ echo "$WORKTREES" | while read -r wt; do
     fi
 
     # Check if worktree directory exists
-    if [ ! -d "$REPO_ROOT/$PATH_WT" ]; then
+    # Handle both absolute and relative paths
+    if [[ "$PATH_WT" == /* ]]; then
+        WORKTREE_DIR="$PATH_WT"
+    else
+        WORKTREE_DIR="$REPO_ROOT/$PATH_WT"
+    fi
+    if [ ! -d "$WORKTREE_DIR" ]; then
         BRANCH="$BRANCH (missing)"
     fi
 
