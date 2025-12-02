@@ -13,7 +13,7 @@ import * as sessionDb from '../db/sessions';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readdir, access } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { parseAllowedUsers, isGitHubUserAuthorized } from '../utils/github-auth';
 
 const execAsync = promisify(exec);
@@ -337,7 +337,8 @@ export class GitHubAdapter implements IPlatformAdapter {
     }
 
     // Use just the repo name (not owner-repo) to match /clone behavior
-    const repoPath = `${process.env.WORKSPACE_PATH ?? '/workspace'}/${repo}`;
+    // resolve() converts relative paths to absolute (cross-platform)
+    const repoPath = join(resolve(process.env.WORKSPACE_PATH ?? '/workspace'), repo);
     const codebase = await codebaseDb.createCodebase({
       name: repo,
       repository_url: repoUrlNoGit, // Store without .git for consistency

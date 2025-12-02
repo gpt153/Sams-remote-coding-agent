@@ -3,7 +3,8 @@
  */
 import { resolve } from 'path';
 
-const WORKSPACE_ROOT = process.env.WORKSPACE_PATH ?? '/workspace';
+// resolve() converts relative paths to absolute (cross-platform)
+const WORKSPACE_ROOT = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
 
 /**
  * Validates that a resolved path stays within the allowed workspace directory.

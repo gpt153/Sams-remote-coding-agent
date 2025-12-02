@@ -80,6 +80,17 @@ describe('DiscordAdapter', () => {
 
       expect(adapter.getConversationId(mockMessage)).toBe('1234567890');
     });
+
+    test('should use thread ID when message is in a thread', () => {
+      const adapter = new DiscordAdapter('fake-token-for-testing');
+      // When a message is in a thread, channelId IS the thread ID
+      // Parent channel would be accessible via message.channel.parentId
+      const mockThreadMessage = {
+        channelId: '9876543210', // This is the thread ID, not parent channel
+      } as unknown as import('discord.js').Message;
+
+      expect(adapter.getConversationId(mockThreadMessage)).toBe('9876543210');
+    });
   });
 
   describe('message sending', () => {

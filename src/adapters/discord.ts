@@ -23,7 +23,7 @@ export class DiscordAdapter implements IPlatformAdapter {
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
       ],
-      partials: [Partials.Channel], // Required for DM support
+      partials: [Partials.Channel], // Required for DM support (also covers threads as they're channel subtypes)
     });
     this.streamingMode = mode;
     this.token = token;
@@ -142,6 +142,8 @@ export class DiscordAdapter implements IPlatformAdapter {
   /**
    * Extract conversation ID from Discord message
    * Uses channel ID as the conversation identifier
+   * Note: For thread messages, channelId is the thread ID (not parent channel)
+   * This means each thread automatically gets its own conversation
    */
   getConversationId(message: Message): string {
     return message.channelId;

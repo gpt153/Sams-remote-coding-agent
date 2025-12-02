@@ -148,7 +148,7 @@ Session:
       const resolvedCwd = resolve(newCwd);
 
       // Validate path is within workspace to prevent path traversal
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
       if (!isPathWithinWorkspace(resolvedCwd)) {
         return { success: false, message: `Path must be within ${workspacePath} directory` };
       }
@@ -199,8 +199,9 @@ Session:
 
       const repoName = workingUrl.split('/').pop()?.replace('.git', '') ?? 'unknown';
       // Use WORKSPACE_PATH env var for flexibility (local dev vs Docker)
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
-      const targetPath = `${workspacePath}/${repoName}`;
+      // resolve() converts relative paths to absolute (cross-platform)
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
+      const targetPath = join(workspacePath, repoName);
 
       try {
         // Check if target directory already exists
@@ -372,7 +373,7 @@ Session:
 
       const [commandName, commandPath, ...textParts] = args;
       const commandText = textParts.join(' ');
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
       const basePath = conversation.cwd ?? workspacePath;
       const fullPath = resolve(basePath, commandPath);
 
@@ -411,7 +412,7 @@ Session:
       }
 
       const folderPath = args.join(' ');
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
       const basePath = conversation.cwd ?? workspacePath;
       const fullPath = resolve(basePath, folderPath);
 
@@ -477,7 +478,7 @@ Session:
     }
 
     case 'repos': {
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
 
       try {
         const entries = await readdir(workspacePath, { withFileTypes: true });
@@ -535,7 +536,7 @@ Session:
         return { success: false, message: 'Usage: /repo <number|name> [pull]' };
       }
 
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
       const identifier = args[0];
       const shouldPull = args[1]?.toLowerCase() === 'pull';
 
@@ -670,7 +671,7 @@ Session:
         return { success: false, message: 'Usage: /repo-remove <number|name>' };
       }
 
-      const workspacePath = process.env.WORKSPACE_PATH ?? '/workspace';
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
       const identifier = args[0];
 
       try {
