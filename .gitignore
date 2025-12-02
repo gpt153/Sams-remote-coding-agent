@@ -58,3 +58,6 @@ Thumbs.db
 .test-issue-number
 
 coverage
+
+worktree
+.claude/worktree-registry.json
