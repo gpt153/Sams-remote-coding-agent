@@ -15,6 +15,7 @@ import { promisify } from 'util';
 import { readdir, access } from 'fs/promises';
 import { join, resolve } from 'path';
 import { parseAllowedUsers, isGitHubUserAuthorized } from '../utils/github-auth';
+import { isWorktreePath, createWorktreeForIssue, removeWorktree } from '../utils/git';
 
 const execAsync = promisify(exec);
 
@@ -27,6 +28,7 @@ interface WebhookEvent {
     user: { login: string };
     labels: { name: string }[];
     state: string;
+    pull_request?: { url: string }; // Present if the issue is actually a PR
   };
   pull_request?: {
     number: number;
@@ -170,9 +172,36 @@ export class GitHubAdapter implements IPlatformAdapter {
     eventType: 'issue' | 'issue_comment' | 'pull_request';
     issue?: WebhookEvent['issue'];
     pullRequest?: WebhookEvent['pull_request'];
+    isCloseEvent?: boolean;
   } | null {
     const owner = event.repository.owner.login;
     const repo = event.repository.name;
+
+    // Detect issue closed
+    if (event.issue && event.action === 'closed') {
+      return {
+        owner,
+        repo,
+        number: event.issue.number,
+        comment: '',
+        eventType: 'issue',
+        issue: event.issue,
+        isCloseEvent: true,
+      };
+    }
+
+    // Detect PR merged/closed
+    if (event.pull_request && event.action === 'closed') {
+      return {
+        owner,
+        repo,
+        number: event.pull_request.number,
+        comment: '',
+        eventType: 'pull_request',
+        pullRequest: event.pull_request,
+        isCloseEvent: true,
+      };
+    }
 
     // issue_comment (covers both issues and PRs)
     if (event.comment) {
@@ -319,11 +348,12 @@ export class GitHubAdapter implements IPlatformAdapter {
   /**
    * Get or create codebase for repository
    * Returns: codebase record, path to use, and whether it's new
+   * Always uses canonical path (not worktree paths) for codebase registration
    */
   private async getOrCreateCodebaseForRepo(
     owner: string,
     repo: string
-  ): Promise<{ codebase: { id: string; name: string }; repoPath: string; isNew: boolean }> {
+  ): Promise<{ codebase: { id: string; name: string; default_cwd: string }; repoPath: string; isNew: boolean }> {
     // Try both with and without .git suffix to match existing clones
     const repoUrlNoGit = `https://github.com/${owner}/${repo}`;
     const repoUrlWithGit = `${repoUrlNoGit}.git`;
@@ -331,22 +361,73 @@ export class GitHubAdapter implements IPlatformAdapter {
     let existing = await codebaseDb.findCodebaseByRepoUrl(repoUrlNoGit);
     existing ??= await codebaseDb.findCodebaseByRepoUrl(repoUrlWithGit);
 
+    // Canonical path is always $WORKSPACE_PATH/{repo}
+    const canonicalPath = join(resolve(process.env.WORKSPACE_PATH ?? '/workspace'), repo);
+
     if (existing) {
+      // Check if existing codebase points to a worktree path - fix it if so
+      // Either it's an actual worktree, or it looks like one (contains /worktrees/ in path)
+      const looksLikeWorktreePath = existing.default_cwd.includes('/worktrees/');
+      if (looksLikeWorktreePath || (await isWorktreePath(existing.default_cwd))) {
+        console.log(`[GitHub] Fixing stale worktree path for codebase: ${existing.name}`);
+        await codebaseDb.updateCodebase(existing.id, { default_cwd: canonicalPath });
+        existing.default_cwd = canonicalPath;
+      }
+
       console.log(`[GitHub] Using existing codebase: ${existing.name} at ${existing.default_cwd}`);
       return { codebase: existing, repoPath: existing.default_cwd, isNew: false };
     }
 
     // Use just the repo name (not owner-repo) to match /clone behavior
     // resolve() converts relative paths to absolute (cross-platform)
-    const repoPath = join(resolve(process.env.WORKSPACE_PATH ?? '/workspace'), repo);
     const codebase = await codebaseDb.createCodebase({
       name: repo,
       repository_url: repoUrlNoGit, // Store without .git for consistency
-      default_cwd: repoPath,
+      default_cwd: canonicalPath,
     });
 
-    console.log(`[GitHub] Created new codebase: ${codebase.name} at ${repoPath}`);
-    return { codebase, repoPath, isNew: true };
+    console.log(`[GitHub] Created new codebase: ${codebase.name} at ${canonicalPath}`);
+    return { codebase, repoPath: canonicalPath, isNew: true };
+  }
+
+  /**
+   * Clean up worktree when an issue/PR is closed
+   */
+  private async cleanupWorktree(owner: string, repo: string, number: number): Promise<void> {
+    const conversationId = this.buildConversationId(owner, repo, number);
+    const conversation = await db.getConversationByPlatformId('github', conversationId);
+
+    if (!conversation?.worktree_path) {
+      console.log(`[GitHub] No worktree to cleanup for ${conversationId}`);
+      return;
+    }
+
+    const { codebase } = await this.getOrCreateCodebaseForRepo(owner, repo);
+
+    try {
+      await removeWorktree(codebase.default_cwd, conversation.worktree_path);
+      console.log(`[GitHub] Removed worktree: ${conversation.worktree_path}`);
+    } catch (error) {
+      const err = error as Error;
+      console.error('[GitHub] Failed to remove worktree:', error);
+      // Notify user about orphaned worktree (likely has uncommitted changes)
+      const hasUncommittedChanges = err.message.includes('contains modified or untracked files');
+      if (hasUncommittedChanges) {
+        await this.sendMessage(
+          conversationId,
+          `Warning: Could not remove worktree at \`${conversation.worktree_path}\` because it contains uncommitted changes. You may want to manually commit or discard these changes.`
+        );
+      }
+      // Continue with database cleanup anyway
+    }
+
+    // Clear worktree path from conversation, reset cwd to main repo
+    await db.updateConversation(conversation.id, {
+      worktree_path: null,
+      cwd: codebase.default_cwd,
+    });
+
+    console.log(`[GitHub] Cleanup complete for ${conversationId}`);
   }
 
   /**
@@ -420,9 +501,16 @@ ${userComment}`;
     const parsed = this.parseEvent(event);
     if (!parsed) return;
 
-    const { owner, repo, number, comment, eventType, issue, pullRequest } = parsed;
+    const { owner, repo, number, comment, eventType, issue, pullRequest, isCloseEvent } = parsed;
 
-    // 3. Check @mention
+    // 3. Handle close/merge events (cleanup worktree)
+    if (isCloseEvent) {
+      console.log(`[GitHub] Handling close event for ${owner}/${repo}#${String(number)}`);
+      await this.cleanupWorktree(owner, repo, number);
+      return; // Don't process as a message
+    }
+
+    // 4. Check @mention
     if (!this.hasMention(comment)) return;
 
     console.log(`[GitHub] Processing ${eventType}: ${owner}/${repo}#${String(number)}`);
@@ -453,12 +541,37 @@ ${userComment}`;
       await this.autoDetectAndLoadCommands(repoPath, codebase.id);
     }
 
-    // 10. Update conversation
+    // 10. Create worktree for this issue/PR (if new conversation)
+    let worktreePath: string | null = null;
+    // Detect PR: either pull_request event, or issue_comment on a PR (indicated by issue.pull_request or pullRequest)
+    const isPR = eventType === 'pull_request' || !!pullRequest || !!issue?.pull_request;
     if (isNewConversation) {
-      await db.updateConversation(existingConv.id, {
-        codebase_id: codebase.id,
-        cwd: repoPath,
-      });
+      try {
+        worktreePath = await createWorktreeForIssue(repoPath, number, isPR);
+        console.log(`[GitHub] Created worktree: ${worktreePath}`);
+
+        // Update conversation with worktree path
+        await db.updateConversation(existingConv.id, {
+          codebase_id: codebase.id,
+          cwd: worktreePath,
+          worktree_path: worktreePath,
+        });
+      } catch (error) {
+        const err = error as Error;
+        console.error('[GitHub] Failed to create worktree:', error);
+        const branchName = isPR ? `pr-${String(number)}` : `issue-${String(number)}`;
+        await this.sendMessage(
+          conversationId,
+          `Failed to create isolated worktree for branch \`${branchName}\`. This may be due to a branch name conflict or filesystem issue.\n\nError: ${err.message}\n\nPlease resolve the issue and try again.`
+        );
+        return; // Don't continue without isolation
+      }
+    } else {
+      // For existing conversations, ensure cwd is set (and check if worktree exists)
+      if (!existingConv.cwd) {
+        await db.updateConversation(existingConv.id, { cwd: repoPath });
+      }
+      worktreePath = existingConv.worktree_path ?? null;
     }
 
     // 11. Build message with context
@@ -507,6 +620,13 @@ ${userComment}`;
       } else if (eventType === 'issue_comment' && pullRequest) {
         finalMessage = this.buildPRContext(pullRequest, strippedComment);
       }
+    }
+
+    // Add worktree context if working in an isolated branch
+    if (worktreePath) {
+      const branchName = isPR ? `pr-${String(number)}` : `issue-${String(number)}`;
+      const worktreeContext = `\n\n[Working in isolated branch: ${branchName}. When done, changes can be committed and pushed, then a PR can be created from this branch.]`;
+      contextToAppend = contextToAppend ? contextToAppend + worktreeContext : worktreeContext;
     }
 
     // 12. Route to orchestrator

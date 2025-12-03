@@ -70,6 +70,30 @@ export async function findCodebaseByDefaultCwd(defaultCwd: string): Promise<Code
   return result.rows[0] || null;
 }
 
+export async function updateCodebase(
+  id: string,
+  data: { default_cwd?: string }
+): Promise<void> {
+  const updates: string[] = [];
+  const values: (string | null)[] = [];
+  let paramIndex = 1;
+
+  if (data.default_cwd !== undefined) {
+    updates.push(`default_cwd = $${paramIndex++}`);
+    values.push(data.default_cwd);
+  }
+
+  if (updates.length === 0) return;
+
+  updates.push('updated_at = NOW()');
+  values.push(id);
+
+  await pool.query(
+    `UPDATE remote_agent_codebases SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+    values
+  );
+}
+
 export async function deleteCodebase(id: string): Promise<void> {
   // First, unlink any sessions referencing this codebase (FK has no cascade)
   await pool.query('UPDATE remote_agent_sessions SET codebase_id = NULL WHERE codebase_id = $1', [
