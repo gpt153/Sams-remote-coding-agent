@@ -76,6 +76,7 @@ export async function handleMessage(
         'template-list',
         'templates',
         'template-delete',
+        'worktree',
       ];
 
       if (deterministicCommands.includes(command)) {
@@ -125,7 +126,7 @@ export async function handleMessage(
         }
 
         // Read command file
-        const cwd = conversation.cwd ?? codebase.default_cwd;
+        const cwd = conversation.worktree_path ?? conversation.cwd ?? codebase.default_cwd;
         const commandFilePath = join(cwd, commandDef.path);
 
         try {
@@ -196,7 +197,7 @@ export async function handleMessage(
     const codebase = conversation.codebase_id
       ? await codebaseDb.getCodebase(conversation.codebase_id)
       : null;
-    const cwd = conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
+    const cwd = conversation.worktree_path ?? conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
 
     // Check for plan→execute transition (requires NEW session per PRD)
     // Note: The planning command is named 'plan-feature', not 'plan'

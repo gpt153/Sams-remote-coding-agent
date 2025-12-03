@@ -60,6 +60,7 @@ describe('orchestrator', () => {
     ai_assistant_type: 'claude',
     codebase_id: 'codebase-789',
     cwd: '/workspace/project',
+    worktree_path: null,
     created_at: new Date(),
     updated_at: new Date(),
   };

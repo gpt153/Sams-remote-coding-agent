@@ -78,7 +78,7 @@ export async function getOrCreateConversation(
 
 export async function updateConversation(
   id: string,
-  updates: Partial<Pick<Conversation, 'codebase_id' | 'cwd'>>
+  updates: Partial<Pick<Conversation, 'codebase_id' | 'cwd' | 'worktree_path'>>
 ): Promise<void> {
   const fields: string[] = [];
   const values: (string | null)[] = [];
@@ -91,6 +91,10 @@ export async function updateConversation(
   if (updates.cwd !== undefined) {
     fields.push(`cwd = $${String(i++)}`);
     values.push(updates.cwd);
+  }
+  if (updates.worktree_path !== undefined) {
+    fields.push(`worktree_path = $${String(i++)}`);
+    values.push(updates.worktree_path);
   }
 
   if (fields.length === 0) {

@@ -103,6 +103,11 @@ Codebase:
   /setcwd <path> - Set directory
   Note: Use /repo for quick switching, /setcwd for manual paths
 
+Worktrees:
+  /worktree create <branch> - Create isolated worktree
+  /worktree list - Show worktrees for this repo
+  /worktree remove [--force] - Remove current worktree
+
 Session:
   /status - Show state
   /reset - Clear session
@@ -136,6 +141,10 @@ Session:
       }
 
       msg += `\n\nCurrent Working Directory: ${conversation.cwd ?? 'Not set'}`;
+
+      if (conversation.worktree_path) {
+        msg += `\nWorktree: ${conversation.worktree_path}`;
+      }
 
       const session = await sessionDb.getActiveSession(conversation.id);
       if (session?.id) {
@@ -831,6 +840,176 @@ Session:
         return { success: true, message: `Template '${args[0]}' deleted.` };
       }
       return { success: false, message: `Template '${args[0]}' not found.` };
+    }
+
+    case 'worktree': {
+      const subcommand = args[0];
+
+      if (!conversation.codebase_id) {
+        return { success: false, message: 'No codebase configured. Use /clone first.' };
+      }
+
+      const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
+      if (!codebase) {
+        return { success: false, message: 'Codebase not found.' };
+      }
+
+      const mainPath = codebase.default_cwd;
+      const worktreesDir = join(mainPath, 'worktrees');
+
+      switch (subcommand) {
+        case 'create': {
+          const branchName = args[1];
+          if (!branchName) {
+            return { success: false, message: 'Usage: /worktree create <branch-name>' };
+          }
+
+          // Check if already using a worktree
+          if (conversation.worktree_path) {
+            return {
+              success: false,
+              message: `Already using worktree: ${conversation.worktree_path}\n\nRun /worktree remove first.`,
+            };
+          }
+
+          // Validate branch name (alphanumeric, dash, underscore only)
+          if (!/^[a-zA-Z0-9_-]+$/.test(branchName)) {
+            return {
+              success: false,
+              message: 'Branch name must contain only letters, numbers, dashes, and underscores.',
+            };
+          }
+
+          const worktreePath = join(worktreesDir, branchName);
+
+          try {
+            // Create worktree with new branch
+            await execFileAsync('git', [
+              '-C',
+              mainPath,
+              'worktree',
+              'add',
+              worktreePath,
+              '-b',
+              branchName,
+            ]);
+
+            // Add to git safe.directory
+            await execFileAsync('git', [
+              'config',
+              '--global',
+              '--add',
+              'safe.directory',
+              worktreePath,
+            ]);
+
+            // Update conversation to use this worktree
+            await db.updateConversation(conversation.id, { worktree_path: worktreePath });
+
+            // Reset session for fresh start
+            const session = await sessionDb.getActiveSession(conversation.id);
+            if (session) {
+              await sessionDb.deactivateSession(session.id);
+            }
+
+            return {
+              success: true,
+              message: `Worktree created!\n\nBranch: ${branchName}\nPath: ${worktreePath}\n\nThis conversation now works in isolation.\nRun dependency install if needed (e.g., npm install).`,
+              modified: true,
+            };
+          } catch (error) {
+            const err = error as Error;
+            console.error('[Worktree] Create failed:', err);
+
+            // Check for common errors
+            if (err.message.includes('already exists')) {
+              return {
+                success: false,
+                message: `Branch '${branchName}' already exists. Use a different name.`,
+              };
+            }
+            return { success: false, message: `Failed to create worktree: ${err.message}` };
+          }
+        }
+
+        case 'list': {
+          try {
+            const { stdout } = await execFileAsync('git', ['-C', mainPath, 'worktree', 'list']);
+
+            // Parse output and mark current
+            const lines = stdout.trim().split('\n');
+            let msg = 'Worktrees:\n\n';
+
+            for (const line of lines) {
+              const isActive =
+                conversation.worktree_path && line.startsWith(conversation.worktree_path);
+              const marker = isActive ? ' <- active' : '';
+              msg += `${line}${marker}\n`;
+            }
+
+            return { success: true, message: msg };
+          } catch (error) {
+            const err = error as Error;
+            return { success: false, message: `Failed to list worktrees: ${err.message}` };
+          }
+        }
+
+        case 'remove': {
+          if (!conversation.worktree_path) {
+            return { success: false, message: 'This conversation is not using a worktree.' };
+          }
+
+          const worktreePath = conversation.worktree_path;
+          const forceFlag = args[1] === '--force';
+
+          try {
+            // Remove worktree (--force discards uncommitted changes)
+            const gitArgs = ['-C', mainPath, 'worktree', 'remove'];
+            if (forceFlag) {
+              gitArgs.push('--force');
+            }
+            gitArgs.push(worktreePath);
+
+            await execFileAsync('git', gitArgs);
+
+            // Clear worktree_path, keep cwd pointing to main repo
+            await db.updateConversation(conversation.id, {
+              worktree_path: null,
+              cwd: mainPath,
+            });
+
+            // Reset session
+            const session = await sessionDb.getActiveSession(conversation.id);
+            if (session) {
+              await sessionDb.deactivateSession(session.id);
+            }
+
+            return {
+              success: true,
+              message: `Worktree removed: ${worktreePath}\n\nSwitched back to main repo: ${mainPath}`,
+              modified: true,
+            };
+          } catch (error) {
+            const err = error as Error;
+            console.error('[Worktree] Remove failed:', err);
+
+            // Provide friendly error for uncommitted changes
+            if (err.message.includes('untracked files') || err.message.includes('modified')) {
+              return {
+                success: false,
+                message: 'Worktree has uncommitted changes.\n\nCommit your work first, or use `/worktree remove --force` to discard.',
+              };
+            }
+            return { success: false, message: `Failed to remove worktree: ${err.message}` };
+          }
+        }
+
+        default:
+          return {
+            success: false,
+            message: 'Usage:\n  /worktree create <branch>\n  /worktree list\n  /worktree remove [--force]',
+          };
+      }
     }
 
     default:

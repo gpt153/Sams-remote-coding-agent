@@ -27,6 +27,13 @@
 - No `any` types without explicit justification
 - Interfaces for all major abstractions
 
+**Git as First-Class Citizen**
+- Let git handle what git does best (conflicts, uncommitted changes, branch management)
+- Don't wrap git errors - surface them directly to users
+- Trust git's natural guardrails (e.g., refuse to remove worktree with uncommitted changes)
+- Use `execFileAsync` for git commands (not `exec`) to prevent command injection
+- Worktrees enable parallel development per conversation without branch conflicts
+
 ## Essential Commands
 
 ### Development (Recommended)

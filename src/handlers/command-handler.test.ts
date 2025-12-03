@@ -199,6 +199,7 @@ describe('CommandHandler', () => {
       ai_assistant_type: 'claude',
       codebase_id: null,
       cwd: null,
+      worktree_path: null,
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -481,6 +482,141 @@ describe('CommandHandler', () => {
         const result = await handleCommand(baseConversation, '/repo-remove');
         expect(result.success).toBe(false);
         expect(result.message).toContain('Usage');
+      });
+    });
+
+    describe('/worktree', () => {
+      const conversationWithCodebase: Conversation = {
+        ...baseConversation,
+        codebase_id: 'codebase-123',
+        cwd: '/workspace/my-repo',
+      };
+
+      beforeEach(() => {
+        mockCodebaseDb.getCodebase.mockResolvedValue({
+          id: 'codebase-123',
+          name: 'my-repo',
+          repository_url: 'https://github.com/user/my-repo',
+          default_cwd: '/workspace/my-repo',
+          ai_assistant_type: 'claude',
+          commands: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+      });
+
+      describe('create', () => {
+        test('should require codebase', async () => {
+          const result = await handleCommand(baseConversation, '/worktree create feat-x');
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('No codebase');
+        });
+
+        test('should require branch name', async () => {
+          const result = await handleCommand(conversationWithCodebase, '/worktree create');
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('Usage');
+        });
+
+        test('should validate branch name format', async () => {
+          const result = await handleCommand(
+            conversationWithCodebase,
+            '/worktree create "bad name"'
+          );
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('letters, numbers');
+        });
+
+        test('should create worktree with valid name', async () => {
+          mockExecFile.mockImplementation(
+            (_cmd: string, _args: string[], callback: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+              callback(null, { stdout: '', stderr: '' });
+            }
+          );
+          mockSessionDb.getActiveSession.mockResolvedValue(null);
+
+          const result = await handleCommand(conversationWithCodebase, '/worktree create feat-auth');
+
+          expect(result.success).toBe(true);
+          expect(result.message).toContain('Worktree created');
+          expect(result.message).toContain('feat-auth');
+          expect(mockDb.updateConversation).toHaveBeenCalledWith(
+            conversationWithCodebase.id,
+            expect.objectContaining({ worktree_path: '/workspace/my-repo/worktrees/feat-auth' })
+          );
+        });
+
+        test('should reject if already using a worktree', async () => {
+          const convWithWorktree: Conversation = {
+            ...conversationWithCodebase,
+            worktree_path: '/workspace/my-repo/worktrees/existing-branch',
+          };
+
+          const result = await handleCommand(convWithWorktree, '/worktree create new-branch');
+
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('Already using worktree');
+          expect(result.message).toContain('/worktree remove first');
+        });
+      });
+
+      describe('list', () => {
+        test('should list worktrees', async () => {
+          mockExecFile.mockImplementation(
+            (_cmd: string, _args: string[], callback: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+              callback(null, {
+                stdout:
+                  '/workspace/my-repo  abc1234 [main]\n/workspace/my-repo/worktrees/feat-x  def5678 [feat-x]\n',
+                stderr: '',
+              });
+            }
+          );
+
+          const result = await handleCommand(conversationWithCodebase, '/worktree list');
+
+          expect(result.success).toBe(true);
+          expect(result.message).toContain('Worktrees:');
+          expect(result.message).toContain('main');
+        });
+      });
+
+      describe('remove', () => {
+        test('should require active worktree', async () => {
+          const result = await handleCommand(conversationWithCodebase, '/worktree remove');
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('not using a worktree');
+        });
+
+        test('should remove worktree and switch to main', async () => {
+          const convWithWorktree: Conversation = {
+            ...conversationWithCodebase,
+            worktree_path: '/workspace/my-repo/worktrees/feat-x',
+          };
+
+          mockExecFile.mockImplementation(
+            (_cmd: string, _args: string[], callback: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+              callback(null, { stdout: '', stderr: '' });
+            }
+          );
+          mockSessionDb.getActiveSession.mockResolvedValue(null);
+
+          const result = await handleCommand(convWithWorktree, '/worktree remove');
+
+          expect(result.success).toBe(true);
+          expect(result.message).toContain('removed');
+          expect(mockDb.updateConversation).toHaveBeenCalledWith(
+            convWithWorktree.id,
+            expect.objectContaining({ worktree_path: null, cwd: '/workspace/my-repo' })
+          );
+        });
+      });
+
+      describe('default', () => {
+        test('should show usage for unknown subcommand', async () => {
+          const result = await handleCommand(conversationWithCodebase, '/worktree foo');
+          expect(result.success).toBe(false);
+          expect(result.message).toContain('Usage');
+        });
       });
     });
   });

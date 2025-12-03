@@ -8,6 +8,7 @@ export interface Conversation {
   platform_conversation_id: string;
   codebase_id: string | null;
   cwd: string | null;
+  worktree_path: string | null;
   ai_assistant_type: string;
   created_at: Date;
   updated_at: Date;
