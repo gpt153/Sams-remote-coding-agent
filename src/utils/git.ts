@@ -23,29 +23,52 @@ export async function isWorktreePath(path: string): Promise<boolean> {
 /**
  * Create a git worktree for an issue or PR
  * Returns the worktree path
+ *
+ * For PRs: provide prHeadBranch to checkout the PR's actual branch
+ * For issues: creates a new branch (issue-XX)
  */
 export async function createWorktreeForIssue(
   repoPath: string,
   issueNumber: number,
-  isPR: boolean
+  isPR: boolean,
+  prHeadBranch?: string
 ): Promise<string> {
   const branchName = isPR ? `pr-${String(issueNumber)}` : `issue-${String(issueNumber)}`;
   const worktreePath = join(repoPath, '..', 'worktrees', branchName);
 
-  try {
-    // Try to create with new branch
-    await execFileAsync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, '-b', branchName], {
-      timeout: 30000,
-    });
-  } catch (error) {
-    const err = error as Error & { stderr?: string };
-    // Branch already exists - use existing branch
-    if (err.stderr?.includes('already exists')) {
-      await execFileAsync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, branchName], {
+  if (isPR && prHeadBranch) {
+    // For PRs: fetch and checkout the PR's head branch
+    try {
+      // Fetch the PR's head branch from origin
+      await execFileAsync('git', ['-C', repoPath, 'fetch', 'origin', prHeadBranch], {
         timeout: 30000,
       });
-    } else {
-      throw error;
+
+      // Create worktree using the fetched branch
+      await execFileAsync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, `origin/${prHeadBranch}`], {
+        timeout: 30000,
+      });
+    } catch (error) {
+      const err = error as Error & { stderr?: string };
+      throw new Error(`Failed to create worktree for PR branch '${prHeadBranch}': ${err.message}`);
+    }
+  } else {
+    // For issues (or PRs without branch info): create new branch
+    try {
+      // Try to create with new branch
+      await execFileAsync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, '-b', branchName], {
+        timeout: 30000,
+      });
+    } catch (error) {
+      const err = error as Error & { stderr?: string };
+      // Branch already exists - use existing branch
+      if (err.stderr?.includes('already exists')) {
+        await execFileAsync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, branchName], {
+          timeout: 30000,
+        });
+      } else {
+        throw error;
+      }
     }
   }
 
