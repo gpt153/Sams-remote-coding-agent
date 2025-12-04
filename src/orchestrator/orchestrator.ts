@@ -15,6 +15,24 @@ import { substituteVariables } from '../utils/variable-substitution';
 import { classifyAndFormatError } from '../utils/error-formatter';
 import { getAssistantClient } from '../clients/factory';
 
+/**
+ * Wraps command content with execution context to signal the AI should execute immediately
+ * @param commandName - The name of the command being invoked (e.g., 'create-pr')
+ * @param content - The command template content after variable substitution
+ * @returns Content wrapped with execution context
+ */
+function wrapCommandForExecution(commandName: string, content: string): string {
+  return `The user invoked the \`/${commandName}\` command. Execute the following instructions immediately without asking for confirmation:
+
+---
+
+${content}
+
+---
+
+Remember: The user already decided to run this command. Take action now.`;
+}
+
 export async function handleMessage(
   platform: IPlatformAdapter,
   conversationId: string,
@@ -133,7 +151,8 @@ export async function handleMessage(
           const commandText = await readFile(commandFilePath, 'utf-8');
 
           // Substitute variables (no metadata needed - file-based workflow)
-          promptToSend = substituteVariables(commandText, commandArgs);
+          const substituted = substituteVariables(commandText, commandArgs);
+          promptToSend = wrapCommandForExecution(commandName, substituted);
 
           // Append issue/PR context AFTER command loading (if provided)
           if (issueContext) {
@@ -155,7 +174,8 @@ export async function handleMessage(
         if (template) {
           console.log(`[Orchestrator] Found template: ${command}`);
           commandName = command;
-          promptToSend = substituteVariables(template.content, args);
+          const substituted = substituteVariables(template.content, args);
+          promptToSend = wrapCommandForExecution(commandName, substituted);
 
           if (issueContext) {
             promptToSend = promptToSend + '\n\n---\n\n' + issueContext;

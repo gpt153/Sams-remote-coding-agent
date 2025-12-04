@@ -50,6 +50,21 @@ jest.mock('fs/promises', () => ({
 
 import { handleMessage } from './orchestrator';
 
+/**
+ * Helper to wrap command content with execution context (matches wrapCommandForExecution in orchestrator.ts)
+ */
+function wrapCommandForExecution(commandName: string, content: string): string {
+  return `The user invoked the \`/${commandName}\` command. Execute the following instructions immediately without asking for confirmation:
+
+---
+
+${content}
+
+---
+
+Remember: The user already decided to run this command. Take action now.`;
+}
+
 describe('orchestrator', () => {
   let platform: MockPlatformAdapter;
 
@@ -211,7 +226,7 @@ describe('orchestrator', () => {
       );
       // Session has assistant_session_id so it's passed to sendQuery
       expect(mockClient.sendQuery).toHaveBeenCalledWith(
-        'Plan the following: Add dark mode',
+        wrapCommandForExecution('plan', 'Plan the following: Add dark mode'),
         '/workspace/project',
         'claude-session-xyz'
       );
@@ -227,7 +242,7 @@ describe('orchestrator', () => {
       await handleMessage(platform, 'chat-456', '/command-invoke plan', 'Issue #42: Fix the bug');
 
       expect(mockClient.sendQuery).toHaveBeenCalledWith(
-        'Command text here\n\n---\n\nIssue #42: Fix the bug',
+        wrapCommandForExecution('plan', 'Command text here') + '\n\n---\n\nIssue #42: Fix the bug',
         expect.any(String),
         'claude-session-xyz' // Uses existing session's ID
       );
@@ -280,7 +295,7 @@ describe('orchestrator', () => {
 
       expect(mockCreateSession).not.toHaveBeenCalled();
       expect(mockClient.sendQuery).toHaveBeenCalledWith(
-        'Plan command',
+        wrapCommandForExecution('plan', 'Plan command'),
         '/workspace/project',
         'claude-session-xyz'
       );
@@ -446,7 +461,7 @@ describe('orchestrator', () => {
       await handleMessage(platform, 'chat-456', '/command-invoke plan');
 
       expect(mockClient.sendQuery).toHaveBeenCalledWith(
-        'Plan command',
+        wrapCommandForExecution('plan', 'Plan command'),
         '/workspace/project', // conversation.cwd
         'claude-session-xyz' // Uses existing session's ID
       );
@@ -466,7 +481,7 @@ describe('orchestrator', () => {
       await handleMessage(platform, 'chat-456', '/command-invoke plan');
 
       expect(mockClient.sendQuery).toHaveBeenCalledWith(
-        'Plan command',
+        wrapCommandForExecution('plan', 'Plan command'),
         '/workspace/test-project', // codebase.default_cwd
         'claude-session-xyz' // Uses existing session's ID
       );
