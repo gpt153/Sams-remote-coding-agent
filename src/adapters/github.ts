@@ -541,12 +541,12 @@ ${userComment}`;
       await this.autoDetectAndLoadCommands(repoPath, codebase.id);
     }
 
-    // 10. Create worktree for this issue/PR (if new conversation)
+    // 10. Create worktree for this issue/PR (if conversation doesn't have one)
     let worktreePath: string | null = null;
     let prHeadBranch: string | undefined;
     // Detect PR: either pull_request event, or issue_comment on a PR (indicated by issue.pull_request or pullRequest)
     const isPR = eventType === 'pull_request' || !!pullRequest || !!issue?.pull_request;
-    if (isNewConversation) {
+    if (!existingConv.worktree_path) {
       try {
         // For PRs, fetch the head branch name from GitHub API
         if (isPR) {
