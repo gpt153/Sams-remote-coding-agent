@@ -541,13 +541,23 @@ Session:
           };
         }
 
-        const currentCwd = conversation.cwd ?? '';
+        // Get current codebase to check for active repo (consistent with /status)
+        let currentCodebase = conversation.codebase_id
+          ? await codebaseDb.getCodebase(conversation.codebase_id)
+          : null;
+
+        // Auto-detect codebase from cwd if not explicitly linked (same as /status)
+        if (!currentCodebase && conversation.cwd) {
+          currentCodebase = await codebaseDb.findCodebaseByDefaultCwd(conversation.cwd);
+        }
+
         let msg = 'Repositories:\n\n';
 
         for (let i = 0; i < folders.length; i++) {
           const folder = folders[i];
           const folderPath = join(workspacePath, folder);
-          const isActive = currentCwd.startsWith(folderPath);
+          // Mark as active only if current codebase's default_cwd matches this folder
+          const isActive = currentCodebase?.default_cwd === folderPath;
           const marker = isActive ? ' ← active' : '';
           msg += `${String(i + 1)}. ${folder}${marker}\n`;
         }

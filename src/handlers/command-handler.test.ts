@@ -20,6 +20,7 @@ import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import { isPathWithinWorkspace } from '../utils/path-validation';
 import { execFile } from 'child_process';
+import * as fsPromises from 'fs/promises';
 
 const mockDb = db as jest.Mocked<typeof db>;
 const mockCodebaseDb = codebaseDb as jest.Mocked<typeof codebaseDb>;
@@ -28,12 +29,15 @@ const mockIsPathWithinWorkspace = isPathWithinWorkspace as jest.MockedFunction<
   typeof isPathWithinWorkspace
 >;
 const mockExecFile = execFile as unknown as jest.Mock;
+const mockFsPromises = fsPromises as jest.Mocked<typeof fsPromises>;
 
 describe('CommandHandler', () => {
   // Reset mocks before each test
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsPathWithinWorkspace.mockReturnValue(true);
+    // Ensure consistent workspace path for tests
+    delete process.env.WORKSPACE_PATH;
   });
 
   describe('parseCommand', () => {
@@ -482,6 +486,141 @@ describe('CommandHandler', () => {
         const result = await handleCommand(baseConversation, '/repo-remove');
         expect(result.success).toBe(false);
         expect(result.message).toContain('Usage');
+      });
+    });
+
+    describe('/repos', () => {
+      test('should mark repo as active when codebase_id matches', async () => {
+        // Setup: conversation has codebase_id linked
+        const conversation = {
+          ...baseConversation,
+          codebase_id: 'cb-123',
+          cwd: '/workspace/my-repo',
+        };
+
+        // Mock codebase lookup
+        mockCodebaseDb.getCodebase.mockResolvedValue({
+          id: 'cb-123',
+          name: 'my-repo',
+          repository_url: 'https://github.com/user/my-repo',
+          default_cwd: '/workspace/my-repo',
+          ai_assistant_type: 'claude',
+          commands: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+
+        // Mock workspace directory listing
+        mockFsPromises.readdir.mockResolvedValue([
+          { name: 'my-repo', isDirectory: () => true },
+          { name: 'other-repo', isDirectory: () => true },
+        ] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>);
+
+        const result = await handleCommand(conversation, '/repos');
+
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('my-repo');
+        expect(result.message).toContain('← active');
+        // Only the matching repo should be marked active
+        expect(result.message).not.toMatch(/other-repo.*← active/);
+      });
+
+      test('should auto-detect active repo from cwd when no codebase_id', async () => {
+        // Setup: conversation has cwd set but no codebase_id
+        const conversation = {
+          ...baseConversation,
+          cwd: '/workspace/detected-repo',
+          codebase_id: null,
+        };
+
+        // Mock codebase auto-detection
+        mockCodebaseDb.findCodebaseByDefaultCwd.mockResolvedValue({
+          id: 'cb-detected',
+          name: 'detected-repo',
+          repository_url: 'https://github.com/user/detected-repo',
+          default_cwd: '/workspace/detected-repo',
+          ai_assistant_type: 'claude',
+          commands: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+
+        // Mock workspace directory listing
+        mockFsPromises.readdir.mockResolvedValue([
+          { name: 'detected-repo', isDirectory: () => true },
+          { name: 'other-repo', isDirectory: () => true },
+        ] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>);
+
+        const result = await handleCommand(conversation, '/repos');
+
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('detected-repo');
+        expect(result.message).toContain('← active');
+      });
+
+      test('should NOT mark repo active when cwd is subdirectory but no matching codebase', async () => {
+        // Setup: cwd is a subdirectory of a repo, but no codebase matches
+        // This tests the fix: we should NOT use startsWith() anymore
+        const conversation = {
+          ...baseConversation,
+          cwd: '/workspace/some-repo/src/deep/path',
+          codebase_id: null,
+        };
+
+        // Mock: no codebase matches this cwd
+        mockCodebaseDb.findCodebaseByDefaultCwd.mockResolvedValue(null);
+
+        // Mock workspace directory listing
+        mockFsPromises.readdir.mockResolvedValue([
+          { name: 'some-repo', isDirectory: () => true },
+          { name: 'other-repo', isDirectory: () => true },
+        ] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>);
+
+        const result = await handleCommand(conversation, '/repos');
+
+        expect(result.success).toBe(true);
+        // Neither repo should be marked active
+        expect(result.message).not.toContain('← active');
+      });
+
+      test('should be consistent with /status active detection', async () => {
+        // This test verifies /repos and /status agree on active codebase
+        const conversation = {
+          ...baseConversation,
+          cwd: '/workspace/test-repo',
+          codebase_id: null,
+        };
+
+        const mockCodebase = {
+          id: 'cb-test',
+          name: 'test-repo',
+          repository_url: 'https://github.com/user/test-repo',
+          default_cwd: '/workspace/test-repo',
+          ai_assistant_type: 'claude',
+          commands: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+
+        // Setup mocks for /repos
+        mockCodebaseDb.findCodebaseByDefaultCwd.mockResolvedValue(mockCodebase);
+        mockFsPromises.readdir.mockResolvedValue([
+          { name: 'test-repo', isDirectory: () => true },
+        ] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>);
+
+        const reposResult = await handleCommand(conversation, '/repos');
+
+        // Reset mocks for /status
+        mockCodebaseDb.findCodebaseByDefaultCwd.mockResolvedValue(mockCodebase);
+        mockDb.updateConversation.mockResolvedValue();
+        mockSessionDb.getActiveSession.mockResolvedValue(null);
+
+        const statusResult = await handleCommand(conversation, '/status');
+
+        // Both should show test-repo as active/configured
+        expect(reposResult.message).toContain('← active');
+        expect(statusResult.message).toContain('test-repo');
+        expect(statusResult.message).not.toContain('No codebase configured');
       });
     });
 
