@@ -1,9 +1,98 @@
-import { readFile } from 'fs/promises';
+import { readFile, access, mkdir } from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { join } from 'path';
+import { join, basename } from 'path';
+import { homedir } from 'os';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Get the base directory for worktrees
+ * Uses WORKTREE_BASE env var if set, otherwise defaults to sibling of repo
+ */
+export function getWorktreeBase(repoPath: string): string {
+  const envBase = process.env.WORKTREE_BASE;
+  if (envBase) {
+    // Expand ~ to home directory using os.homedir() for cross-platform support
+    const expanded = envBase.startsWith('~') ? envBase.replace(/^~/, homedir()) : envBase;
+    return expanded;
+  }
+  // Default: sibling to repo (original behavior)
+  return join(repoPath, '..', 'worktrees');
+}
+
+/**
+ * Check if a worktree already exists at the given path
+ * A valid worktree has both the directory and a .git file/directory
+ */
+export async function worktreeExists(worktreePath: string): Promise<boolean> {
+  try {
+    await access(worktreePath);
+    const gitPath = join(worktreePath, '.git');
+    await access(gitPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List all worktrees for a repository
+ * Returns array of {path, branch} objects parsed from git worktree list --porcelain
+ */
+export async function listWorktrees(
+  repoPath: string
+): Promise<{ path: string; branch: string }[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', repoPath, 'worktree', 'list', '--porcelain'],
+      { timeout: 10000 }
+    );
+
+    const worktrees: { path: string; branch: string }[] = [];
+    let currentPath = '';
+
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        currentPath = line.substring(9);
+      } else if (line.startsWith('branch ')) {
+        const branch = line.substring(7).replace('refs/heads/', '');
+        if (currentPath) {
+          worktrees.push({ path: currentPath, branch });
+        }
+      }
+    }
+
+    return worktrees;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find an existing worktree by branch name pattern
+ * Useful for discovering skill-created worktrees when app receives GitHub event
+ */
+export async function findWorktreeByBranch(
+  repoPath: string,
+  branchPattern: string
+): Promise<string | null> {
+  const worktrees = await listWorktrees(repoPath);
+
+  // Exact match first
+  const exact = worktrees.find(wt => wt.branch === branchPattern);
+  if (exact) return exact.path;
+
+  // Partial match (e.g., "feature-auth" matches "feature/auth" after slugification)
+  const slugified = branchPattern.replace(/\//g, '-');
+  const partial = worktrees.find(
+    wt => wt.branch.replace(/\//g, '-') === slugified || wt.branch === slugified
+  );
+  if (partial) return partial.path;
+
+  return null;
+}
 
 /**
  * Check if a path is inside a git worktree (vs main repo)
@@ -26,6 +115,8 @@ export async function isWorktreePath(path: string): Promise<boolean> {
  *
  * For PRs: provide prHeadBranch to checkout the PR's actual branch
  * For issues: creates a new branch (issue-XX)
+ *
+ * Will adopt existing worktrees if found (enables skill-app symbiosis)
  */
 export async function createWorktreeForIssue(
   repoPath: string,
@@ -34,7 +125,28 @@ export async function createWorktreeForIssue(
   prHeadBranch?: string
 ): Promise<string> {
   const branchName = isPR ? `pr-${String(issueNumber)}` : `issue-${String(issueNumber)}`;
-  const worktreePath = join(repoPath, '..', 'worktrees', branchName);
+  const projectName = basename(repoPath);
+  const worktreeBase = getWorktreeBase(repoPath);
+  const worktreePath = join(worktreeBase, projectName, branchName);
+
+  // Check if worktree already exists at expected path (possibly created by skill)
+  if (await worktreeExists(worktreePath)) {
+    console.log(`[Git] Adopting existing worktree: ${worktreePath}`);
+    return worktreePath;
+  }
+
+  // For PRs: also check if skill created a worktree with the PR's branch name
+  if (isPR && prHeadBranch) {
+    const existingByBranch = await findWorktreeByBranch(repoPath, prHeadBranch);
+    if (existingByBranch) {
+      console.log(`[Git] Adopting existing worktree for branch ${prHeadBranch}: ${existingByBranch}`);
+      return existingByBranch;
+    }
+  }
+
+  // Ensure worktree base directory exists
+  const projectWorktreeDir = join(worktreeBase, projectName);
+  await mkdir(projectWorktreeDir, { recursive: true });
 
   if (isPR && prHeadBranch) {
     // For PRs: fetch and checkout the PR's head branch

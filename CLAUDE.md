@@ -273,6 +273,33 @@ LOAD_BUILTIN_COMMANDS=true  # Load maintained workflow templates on startup
 
 **Loading:** Use `dotenv` package, load in `src/index.ts`
 
+### Worktree Symbiosis (Skill + App)
+
+The app can work alongside the worktree-manager Claude Code skill. Both use git worktrees for isolated development, and can share the same base directory.
+
+**To enable symbiosis:**
+
+1. Set `WORKTREE_BASE` to match the skill's `worktreeBase` config:
+   ```env
+   WORKTREE_BASE=~/tmp/worktrees
+   ```
+
+2. Both systems will use the same directory:
+   - Skill creates: `~/tmp/worktrees/<project>/<branch-slug>/`
+   - App creates: `~/tmp/worktrees/<project>/<issue|pr>-<number>/`
+
+3. The app will **adopt** skill-created worktrees when:
+   - A PR is opened for a branch that already has a worktree
+   - The worktree path matches what the app would create
+
+4. Use `/worktree orphans` to see all worktrees from git's perspective
+
+**Note**: Each system maintains its own metadata:
+- Skill: `~/.claude/worktree-registry.json`
+- App: Database (`conversations.worktree_path`)
+
+Git (`git worktree list`) is the source of truth for what actually exists on disk.
+
 ## Development Guidelines
 
 ### When Creating New Features

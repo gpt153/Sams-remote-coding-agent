@@ -12,6 +12,7 @@ import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import * as templateDb from '../db/command-templates';
 import { isPathWithinWorkspace } from '../utils/path-validation';
+import { listWorktrees } from '../utils/git';
 
 const execFileAsync = promisify(execFile);
 
@@ -1066,10 +1067,40 @@ Session:
           }
         }
 
+        case 'orphans': {
+          // Show all worktrees from git perspective (source of truth)
+          // Useful for discovering skill-created worktrees or stale entries
+          const gitWorktrees = await listWorktrees(mainPath);
+
+          if (gitWorktrees.length <= 1) {
+            return {
+              success: true,
+              message: 'No worktrees found (only main repo).\n\nUse `/worktree create <branch>` to create one.',
+            };
+          }
+
+          let msg = 'All worktrees (from git):\n\n';
+          for (const wt of gitWorktrees) {
+            const isMainRepo = wt.path === mainPath;
+            if (isMainRepo) continue;
+
+            const shortPath = shortenPath(wt.path, mainPath);
+            const isCurrent = wt.path === conversation.worktree_path;
+            const marker = isCurrent ? ' ← current' : '';
+            msg += `  ${wt.branch} → ${shortPath}${marker}\n`;
+          }
+
+          msg += '\nNote: This shows ALL worktrees including those created by external tools.\n';
+          msg += 'Git (`git worktree list`) is the source of truth.';
+
+          return { success: true, message: msg };
+        }
+
         default:
           return {
             success: false,
-            message: 'Usage:\n  /worktree create <branch>\n  /worktree list\n  /worktree remove [--force]',
+            message:
+              'Usage:\n  /worktree create <branch>\n  /worktree list\n  /worktree remove [--force]\n  /worktree orphans',
           };
       }
     }
