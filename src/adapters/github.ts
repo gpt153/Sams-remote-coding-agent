@@ -59,10 +59,12 @@ export class GitHubAdapter implements IPlatformAdapter {
   private octokit: Octokit;
   private webhookSecret: string;
   private allowedUsers: string[];
+  private botMention: string;
 
-  constructor(token: string, webhookSecret: string) {
+  constructor(token: string, webhookSecret: string, botMention?: string) {
     this.octokit = new Octokit({ auth: token });
     this.webhookSecret = webhookSecret;
+    this.botMention = botMention ?? 'remote-agent';
 
     // Parse GitHub user whitelist (optional - empty = open access)
     this.allowedUsers = parseAllowedUsers(process.env.GITHUB_ALLOWED_USERS);
@@ -73,6 +75,7 @@ export class GitHubAdapter implements IPlatformAdapter {
     }
 
     console.log('[GitHub] Adapter initialized with secret:', webhookSecret.substring(0, 8) + '...');
+    console.log('[GitHub] Bot mention configured as:', this.botMention);
   }
 
   /**
@@ -282,17 +285,19 @@ export class GitHubAdapter implements IPlatformAdapter {
   }
 
   /**
-   * Check if text contains @remote-agent mention
+   * Check if text contains @mention for the configured bot
    */
   private hasMention(text: string): boolean {
-    return /@remote-agent[\s,:;]/.test(text) || text.trim() === '@remote-agent';
+    const pattern = new RegExp(`@${this.botMention}[\\s,:;]`);
+    return pattern.test(text) || text.trim() === `@${this.botMention}`;
   }
 
   /**
-   * Strip @remote-agent mention from text
+   * Strip @mention from text for the configured bot
    */
   private stripMention(text: string): string {
-    return text.replace(/@remote-agent[\s,:;]+/g, '').trim();
+    const pattern = new RegExp(`@${this.botMention}[\\s,:;]+`, 'g');
+    return text.replace(pattern, '').trim();
   }
 
   /**
