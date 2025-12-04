@@ -193,11 +193,21 @@ export async function handleMessage(
         }
       }
     } else {
-      // Regular message - require codebase
+      // Regular message - route through router template
       if (!conversation.codebase_id) {
         await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');
         return;
       }
+
+      // Load router template for natural language routing
+      const routerTemplate = await templateDb.getTemplate('router');
+      if (routerTemplate) {
+        console.log('[Orchestrator] Routing through router template');
+        commandName = 'router';
+        // Pass the entire message as $ARGUMENTS for the router
+        promptToSend = substituteVariables(routerTemplate.content, [message]);
+      }
+      // If no router template, message passes through as-is (backward compatible)
     }
 
     // Prepend thread context if provided

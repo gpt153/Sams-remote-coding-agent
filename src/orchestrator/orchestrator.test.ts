@@ -265,6 +265,51 @@ describe('orchestrator', () => {
     });
   });
 
+  describe('router template', () => {
+    test('routes non-slash messages through router template when available', async () => {
+      mockGetTemplate.mockImplementation(async (name: string) => {
+        if (name === 'router') {
+          return {
+            id: 'router-id',
+            name: 'router',
+            description: 'Route requests',
+            content: 'Router prompt with $ARGUMENTS',
+            created_at: new Date(),
+            updated_at: new Date(),
+          };
+        }
+        return null;
+      });
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', 'fix the login bug');
+
+      expect(mockGetTemplate).toHaveBeenCalledWith('router');
+      expect(mockClient.sendQuery).toHaveBeenCalledWith(
+        'Router prompt with fix the login bug',
+        '/workspace/project',
+        'claude-session-xyz'
+      );
+    });
+
+    test('passes message directly if router template not available', async () => {
+      mockGetTemplate.mockResolvedValue(null);
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', 'fix the login bug');
+
+      expect(mockClient.sendQuery).toHaveBeenCalledWith(
+        'fix the login bug',
+        '/workspace/project',
+        'claude-session-xyz'
+      );
+    });
+  });
+
   describe('session management', () => {
     test('creates new session when none exists', async () => {
       mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });

@@ -660,8 +660,9 @@ ${userComment}`;
           }
         }
       }
-    } else if (isNewConversation) {
-      // For non-command messages, add issue/PR context directly
+    } else {
+      // For non-command messages, always add issue/PR context
+      // Router needs this context to understand what the user is asking about
       if (eventType === 'issue' && issue) {
         finalMessage = this.buildIssueContext(issue, strippedComment);
       } else if (eventType === 'issue_comment' && issue) {
