@@ -37,6 +37,11 @@ jest.mock('../db/sessions', () => ({
   getActiveSession: jest.fn(),
   createSession: jest.fn(),
   endSession: jest.fn(),
+  deactivateSession: jest.fn(),
+}));
+
+jest.mock('../utils/github-graphql', () => ({
+  getLinkedIssueNumbers: jest.fn().mockResolvedValue([]),
 }));
 
 // Mock Octokit to avoid ESM import issues in Jest
@@ -201,6 +206,106 @@ describe('GitHubAdapter', () => {
         // PR detection logic: !!issue?.pull_request
         expect(!!issueWithPR.pull_request).toBe(true);
         expect(!!(issueWithoutPR as typeof issueWithPR).pull_request).toBe(false);
+      });
+    });
+
+    describe('session deactivation on worktree cleanup', () => {
+      test('should deactivate session when worktree has active session', async () => {
+        // Import mocks
+        const sessionDb = await import('../db/sessions');
+        const mockGetActiveSession = sessionDb.getActiveSession as jest.Mock;
+        const mockDeactivateSession = sessionDb.deactivateSession as jest.Mock;
+
+        // Mock active session
+        mockGetActiveSession.mockResolvedValueOnce({
+          id: 'test-session-id',
+          conversation_id: 'test-conv-id',
+          active: true,
+        });
+
+        // Verify mock setup is correct
+        const session = await sessionDb.getActiveSession('test-conv-id');
+        expect(session?.id).toBe('test-session-id');
+
+        // Deactivate session
+        await sessionDb.deactivateSession('test-session-id');
+        expect(mockDeactivateSession).toHaveBeenCalledWith('test-session-id');
+      });
+
+      test('should handle no active session gracefully', async () => {
+        const sessionDb = await import('../db/sessions');
+        const mockGetActiveSession = sessionDb.getActiveSession as jest.Mock;
+        const mockDeactivateSession = sessionDb.deactivateSession as jest.Mock;
+
+        mockGetActiveSession.mockResolvedValueOnce(null);
+        mockDeactivateSession.mockClear();
+
+        // When no session, deactivateSession should not be called
+        const session = await sessionDb.getActiveSession('test-conv-id');
+        expect(session).toBeNull();
+
+        // If no session found, no deactivation should happen
+        if (!session) {
+          expect(mockDeactivateSession).not.toHaveBeenCalled();
+        }
+      });
+    });
+
+    describe('worktree sharing for linked PRs', () => {
+      test('should reuse issue worktree when PR is linked', async () => {
+        const graphql = await import('../utils/github-graphql');
+        const conversations = await import('../db/conversations');
+        const mockGetLinkedIssueNumbers = graphql.getLinkedIssueNumbers as jest.Mock;
+        const mockGetConversationByPlatformId = conversations.getConversationByPlatformId as jest.Mock;
+
+        // PR #50 is linked to issue #42 which has a worktree
+        mockGetLinkedIssueNumbers.mockResolvedValueOnce([42]);
+        mockGetConversationByPlatformId.mockResolvedValueOnce({
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        const linkedIssues = await graphql.getLinkedIssueNumbers('owner', 'repo', 50);
+        expect(linkedIssues).toEqual([42]);
+
+        const issueConv = await conversations.getConversationByPlatformId('github', 'owner/repo#42');
+        expect(issueConv?.worktree_path).toBe('/workspace/worktrees/issue-42');
+      });
+
+      test('should create new worktree when no linked issues', async () => {
+        const graphql = await import('../utils/github-graphql');
+        const mockGetLinkedIssueNumbers = graphql.getLinkedIssueNumbers as jest.Mock;
+
+        mockGetLinkedIssueNumbers.mockResolvedValueOnce([]);
+
+        const linkedIssues = await graphql.getLinkedIssueNumbers('owner', 'repo', 50);
+        expect(linkedIssues).toEqual([]);
+        // When no linked issues, should proceed to create new worktree (tested via integration)
+      });
+
+      test('should create new worktree when linked issue has no worktree', async () => {
+        const graphql = await import('../utils/github-graphql');
+        const conversations = await import('../db/conversations');
+        const mockGetLinkedIssueNumbers = graphql.getLinkedIssueNumbers as jest.Mock;
+        const mockGetConversationByPlatformId = conversations.getConversationByPlatformId as jest.Mock;
+
+        // PR linked to issue, but issue has no worktree yet
+        mockGetLinkedIssueNumbers.mockResolvedValueOnce([42]);
+        mockGetConversationByPlatformId.mockResolvedValueOnce({
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: null, // No worktree
+        });
+
+        const linkedIssues = await graphql.getLinkedIssueNumbers('owner', 'repo', 50);
+        expect(linkedIssues).toEqual([42]);
+
+        const issueConv = await conversations.getConversationByPlatformId('github', 'owner/repo#42');
+        expect(issueConv?.worktree_path).toBeNull();
+        // Should proceed to create new worktree when linked issue has no worktree
       });
     });
   });

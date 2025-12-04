@@ -19,6 +19,20 @@ export async function getConversationByPlatformId(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Find a conversation that uses a specific worktree path
+ * Used to share worktrees between linked issues and PRs
+ */
+export async function getConversationByWorktreePath(
+  worktreePath: string
+): Promise<Conversation | null> {
+  const result = await pool.query<Conversation>(
+    'SELECT * FROM remote_agent_conversations WHERE worktree_path = $1 LIMIT 1',
+    [worktreePath]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function getOrCreateConversation(
   platformType: string,
   platformId: string,

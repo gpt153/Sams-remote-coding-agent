@@ -137,6 +137,7 @@ Worktrees:
 Session:
   /status - Show state
   /reset - Clear session
+  /reset-context - Reset AI context, keep worktree
   /help - Show help`,
       };
 
@@ -594,6 +595,23 @@ Session:
           success: true,
           message:
             'Session cleared. Starting fresh on next message.\n\nCodebase configuration preserved.',
+        };
+      }
+      return {
+        success: true,
+        message: 'No active session to reset.',
+      };
+    }
+
+    case 'reset-context': {
+      // Reset AI session while keeping worktree
+      const activeSession = await sessionDb.getActiveSession(conversation.id);
+      if (activeSession) {
+        await sessionDb.deactivateSession(activeSession.id);
+        return {
+          success: true,
+          message:
+            'AI context reset. Your next message will start a fresh conversation while keeping your current working directory.',
         };
       }
       return {

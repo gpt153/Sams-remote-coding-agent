@@ -2,7 +2,7 @@
  * Orchestrator - Main conversation handler
  * Routes slash commands and AI messages appropriately
  */
-import { readFile } from 'fs/promises';
+import { readFile, access } from 'fs/promises';
 import { join } from 'path';
 import { IPlatformAdapter } from '../types';
 import * as db from '../db/conversations';
@@ -87,6 +87,7 @@ export async function handleMessage(
         'repo',
         'repo-remove',
         'reset',
+        'reset-context',
         'command-set',
         'load-commands',
         'commands',
@@ -227,7 +228,33 @@ export async function handleMessage(
     const codebase = conversation.codebase_id
       ? await codebaseDb.getCodebase(conversation.codebase_id)
       : null;
-    const cwd = conversation.worktree_path ?? conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
+    let cwd = conversation.worktree_path ?? conversation.cwd ?? codebase?.default_cwd ?? '/workspace';
+
+    // Validate cwd exists - handle stale worktree paths gracefully
+    try {
+      await access(cwd);
+    } catch {
+      console.warn(`[Orchestrator] Working directory ${cwd} does not exist`);
+
+      // Deactivate stale session to force fresh start
+      if (session) {
+        await sessionDb.deactivateSession(session.id);
+        session = null;
+        console.log('[Orchestrator] Deactivated session with stale worktree');
+      }
+
+      // Clear stale worktree reference from conversation
+      if (conversation.worktree_path) {
+        await db.updateConversation(conversation.id, {
+          worktree_path: null,
+          cwd: codebase?.default_cwd ?? '/workspace',
+        });
+        console.log('[Orchestrator] Cleared stale worktree path from conversation');
+      }
+
+      // Use default cwd for this request
+      cwd = codebase?.default_cwd ?? '/workspace';
+    }
 
     // Check for plan→execute transition (requires NEW session per PRD)
     // Note: The planning command is named 'plan-feature', not 'plan'

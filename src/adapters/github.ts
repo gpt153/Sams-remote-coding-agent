@@ -16,6 +16,7 @@ import { readdir, access } from 'fs/promises';
 import { join, resolve } from 'path';
 import { parseAllowedUsers, isGitHubUserAuthorized } from '../utils/github-auth';
 import { isWorktreePath, createWorktreeForIssue, removeWorktree } from '../utils/git';
+import { getLinkedIssueNumbers } from '../utils/github-graphql';
 
 const execAsync = promisify(exec);
 
@@ -437,6 +438,14 @@ export class GitHubAdapter implements IPlatformAdapter {
       return;
     }
 
+    // Deactivate any active session for this conversation
+    // This prevents resume attempts with a stale cwd
+    const activeSession = await sessionDb.getActiveSession(conversation.id);
+    if (activeSession) {
+      await sessionDb.deactivateSession(activeSession.id);
+      console.log(`[GitHub] Deactivated session ${activeSession.id} for worktree cleanup`);
+    }
+
     const { codebase } = await this.getOrCreateCodebaseForRepo(owner, repo);
 
     try {
@@ -582,47 +591,77 @@ ${userComment}`;
     // Detect PR: either pull_request event, or issue_comment on a PR (indicated by issue.pull_request or pullRequest)
     const isPR = eventType === 'pull_request' || !!pullRequest || !!issue?.pull_request;
     if (!existingConv.worktree_path) {
-      try {
-        // For PRs, fetch the head branch name from GitHub API
-        if (isPR) {
-          try {
-            const { data: prData } = await this.octokit.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: number,
+      // For PRs: Check if this PR is linked to an existing issue with a worktree
+      if (isPR) {
+        const linkedIssues = await getLinkedIssueNumbers(owner, repo, number);
+
+        for (const issueNum of linkedIssues) {
+          // Check if the linked issue has a worktree we can reuse
+          const issueConvId = this.buildConversationId(owner, repo, issueNum);
+          const issueConv = await db.getConversationByPlatformId('github', issueConvId);
+
+          if (issueConv?.worktree_path) {
+            // Reuse the issue's worktree
+            worktreePath = issueConv.worktree_path;
+            console.log(
+              `[GitHub] PR #${String(number)} linked to issue #${String(issueNum)}, sharing worktree: ${worktreePath}`
+            );
+
+            // Update this conversation to use the shared worktree
+            await db.updateConversation(existingConv.id, {
+              codebase_id: codebase.id,
+              cwd: worktreePath,
+              worktree_path: worktreePath,
             });
-            prHeadBranch = prData.head.ref;
-            console.log(`[GitHub] PR #${String(number)} head branch: ${prHeadBranch}`);
-          } catch (error) {
-            console.warn('[GitHub] Failed to fetch PR head branch, will create new branch instead:', error);
+            break; // Use first found worktree
           }
         }
+      }
 
-        worktreePath = await createWorktreeForIssue(repoPath, number, isPR, prHeadBranch);
-        console.log(`[GitHub] Created worktree: ${worktreePath}`);
+      // If no shared worktree found, create new one
+      if (!worktreePath) {
+        try {
+          // For PRs, fetch the head branch name from GitHub API
+          if (isPR) {
+            try {
+              const { data: prData } = await this.octokit.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: number,
+              });
+              prHeadBranch = prData.head.ref;
+              console.log(`[GitHub] PR #${String(number)} head branch: ${prHeadBranch}`);
+            } catch (error) {
+              console.warn(
+                '[GitHub] Failed to fetch PR head branch, will create new branch instead:',
+                error
+              );
+            }
+          }
 
-        // Update conversation with worktree path
-        await db.updateConversation(existingConv.id, {
-          codebase_id: codebase.id,
-          cwd: worktreePath,
-          worktree_path: worktreePath,
-        });
-      } catch (error) {
-        const err = error as Error;
-        console.error('[GitHub] Failed to create worktree:', error);
-        const branchName = isPR ? `pr-${String(number)}` : `issue-${String(number)}`;
-        await this.sendMessage(
-          conversationId,
-          `Failed to create isolated worktree for branch \`${branchName}\`. This may be due to a branch name conflict or filesystem issue.\n\nError: ${err.message}\n\nPlease resolve the issue and try again.`
-        );
-        return; // Don't continue without isolation
+          worktreePath = await createWorktreeForIssue(repoPath, number, isPR, prHeadBranch);
+          console.log(`[GitHub] Created worktree: ${worktreePath}`);
+
+          // Update conversation with worktree path
+          await db.updateConversation(existingConv.id, {
+            codebase_id: codebase.id,
+            cwd: worktreePath,
+            worktree_path: worktreePath,
+          });
+        } catch (error) {
+          const err = error as Error;
+          console.error('[GitHub] Failed to create worktree:', error);
+          const branchName = isPR ? `pr-${String(number)}` : `issue-${String(number)}`;
+          await this.sendMessage(
+            conversationId,
+            `Failed to create isolated worktree for branch \`${branchName}\`. This may be due to a branch name conflict or filesystem issue.\n\nError: ${err.message}\n\nPlease resolve the issue and try again.`
+          );
+          return; // Don't continue without isolation
+        }
       }
     } else {
-      // For existing conversations, ensure cwd is set (and check if worktree exists)
-      if (!existingConv.cwd) {
-        await db.updateConversation(existingConv.id, { cwd: repoPath });
-      }
-      worktreePath = existingConv.worktree_path ?? null;
+      // Conversation already has a worktree, use it
+      worktreePath = existingConv.worktree_path;
     }
 
     // 11. Build message with context

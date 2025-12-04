@@ -3,6 +3,7 @@ import { Conversation, Codebase, Session } from '../types';
 
 // Setup mocks before importing the module under test
 const mockGetOrCreateConversation = jest.fn();
+const mockUpdateConversation = jest.fn();
 const mockGetCodebase = jest.fn();
 const mockGetActiveSession = jest.fn();
 const mockCreateSession = jest.fn();
@@ -14,9 +15,11 @@ const mockHandleCommand = jest.fn();
 const mockParseCommand = jest.fn();
 const mockGetAssistantClient = jest.fn();
 const mockReadFile = jest.fn();
+const mockAccess = jest.fn();
 
 jest.mock('../db/conversations', () => ({
   getOrCreateConversation: mockGetOrCreateConversation,
+  updateConversation: mockUpdateConversation,
 }));
 
 jest.mock('../db/codebases', () => ({
@@ -46,6 +49,7 @@ jest.mock('../clients/factory', () => ({
 
 jest.mock('fs/promises', () => ({
   readFile: mockReadFile,
+  access: mockAccess,
 }));
 
 import { handleMessage } from './orchestrator';
@@ -122,6 +126,7 @@ describe('orchestrator', () => {
     mockCreateSession.mockResolvedValue(mockSession);
     mockGetTemplate.mockResolvedValue(null); // No templates by default
     mockGetAssistantClient.mockReturnValue(mockClient);
+    mockAccess.mockResolvedValue(undefined); // Path exists by default
     mockParseCommand.mockImplementation((message: string) => {
       const parts = message.split(/\s+/);
       return { command: parts[0].substring(1), args: parts.slice(1) };
@@ -529,6 +534,132 @@ describe('orchestrator', () => {
         wrapCommandForExecution('plan', 'Plan command'),
         '/workspace/test-project', // codebase.default_cwd
         'claude-session-xyz' // Uses existing session's ID
+      );
+    });
+  });
+
+  describe('stale worktree handling', () => {
+    test('should deactivate session and clear worktree when cwd does not exist', async () => {
+      // Setup: conversation with worktree_path that doesn't exist
+      const conversationWithStaleWorktree = {
+        ...mockConversation,
+        worktree_path: '/nonexistent/worktree/path',
+        cwd: '/nonexistent/worktree/path',
+      };
+      mockGetOrCreateConversation.mockResolvedValue(conversationWithStaleWorktree);
+
+      // Mock fs.access to throw (path doesn't exist)
+      mockAccess.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+
+      // Mock active session
+      mockGetActiveSession.mockResolvedValue({
+        ...mockSession,
+        id: 'stale-session-id',
+      });
+
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
+      mockReadFile.mockResolvedValue('Plan command');
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', '/command-invoke plan');
+
+      // Verify session was deactivated
+      expect(mockDeactivateSession).toHaveBeenCalledWith('stale-session-id');
+
+      // Verify worktree_path was cleared
+      expect(mockUpdateConversation).toHaveBeenCalledWith(
+        'conv-123',
+        expect.objectContaining({
+          worktree_path: null,
+          cwd: '/workspace/test-project', // Falls back to codebase default_cwd
+        })
+      );
+    });
+
+    test('should use default cwd when worktree path is stale', async () => {
+      // Setup: conversation with worktree_path that doesn't exist
+      const conversationWithStaleWorktree = {
+        ...mockConversation,
+        worktree_path: '/nonexistent/worktree/path',
+        cwd: '/nonexistent/worktree/path',
+      };
+      mockGetOrCreateConversation.mockResolvedValue(conversationWithStaleWorktree);
+
+      // Mock fs.access to throw (path doesn't exist)
+      mockAccess.mockRejectedValueOnce(new Error('ENOENT'));
+
+      // Create a new session without assistant_session_id (simulating fresh start)
+      const freshSession = {
+        ...mockSession,
+        assistant_session_id: null,
+      };
+      mockCreateSession.mockResolvedValue(freshSession);
+
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
+      mockReadFile.mockResolvedValue('Plan command');
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', '/command-invoke plan');
+
+      // Verify AI client was called with the fallback cwd
+      expect(mockClient.sendQuery).toHaveBeenCalledWith(
+        wrapCommandForExecution('plan', 'Plan command'),
+        '/workspace/test-project', // Falls back to codebase default_cwd
+        undefined // New session created (assistant_session_id is null -> undefined)
+      );
+    });
+
+    test('should not deactivate session if cwd exists', async () => {
+      // Mock fs.access to succeed (path exists)
+      mockAccess.mockResolvedValue(undefined);
+
+      // Mock active session
+      mockGetActiveSession.mockResolvedValue(mockSession);
+
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
+      mockReadFile.mockResolvedValue('Plan command');
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', '/command-invoke plan');
+
+      // Verify session was NOT deactivated (for stale worktree reason)
+      // Note: It might be deactivated for plan→execute transition, but not for stale worktree
+      expect(mockUpdateConversation).not.toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ worktree_path: null })
+      );
+    });
+
+    test('should handle conversation without worktree_path gracefully', async () => {
+      // Conversation without worktree_path
+      mockGetOrCreateConversation.mockResolvedValue({
+        ...mockConversation,
+        worktree_path: null,
+        cwd: '/workspace/project',
+      });
+
+      // cwd exists
+      mockAccess.mockResolvedValue(undefined);
+
+      mockParseCommand.mockReturnValue({ command: 'command-invoke', args: ['plan'] });
+      mockReadFile.mockResolvedValue('Plan command');
+      mockClient.sendQuery.mockImplementation(async function* () {
+        yield { type: 'result', sessionId: 'session-id' };
+      });
+
+      await handleMessage(platform, 'chat-456', '/command-invoke plan');
+
+      // Should work normally, no worktree cleanup needed
+      expect(mockClient.sendQuery).toHaveBeenCalledWith(
+        wrapCommandForExecution('plan', 'Plan command'),
+        '/workspace/project',
+        'claude-session-xyz'
       );
     });
   });

@@ -368,6 +368,37 @@ describe('CommandHandler', () => {
       });
     });
 
+    describe('/reset-context', () => {
+      test('should deactivate active session while keeping worktree', async () => {
+        mockSessionDb.getActiveSession.mockResolvedValue({
+          id: 'session-456',
+          conversation_id: 'conv-123',
+          codebase_id: 'cb-123',
+          ai_assistant_type: 'claude',
+          assistant_session_id: 'sdk-456',
+          active: true,
+          metadata: {},
+          started_at: new Date(),
+          ended_at: null,
+        });
+        mockSessionDb.deactivateSession.mockResolvedValue();
+
+        const result = await handleCommand(baseConversation, '/reset-context');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('AI context reset');
+        expect(result.message).toContain('keeping your current working directory');
+        expect(mockSessionDb.deactivateSession).toHaveBeenCalledWith('session-456');
+      });
+
+      test('should handle no active session gracefully', async () => {
+        mockSessionDb.getActiveSession.mockResolvedValue(null);
+
+        const result = await handleCommand(baseConversation, '/reset-context');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('No active session');
+      });
+    });
+
     describe('/command-set', () => {
       test('should return error without codebase', async () => {
         const result = await handleCommand(baseConversation, '/command-set plan plan.md');
