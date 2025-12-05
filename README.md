@@ -6,7 +6,7 @@ Control AI coding assistants (Claude Code, Codex) remotely from Telegram, GitHub
 
 ## Features
 
-- **Multi-Platform Support**: Interact via Telegram, GitHub issues/PRs, and more in the future
+- **Multi-Platform Support**: Interact via Telegram, Slack, Discord, GitHub issues/PRs, and more
 - **Multiple AI Assistants**: Choose between Claude Code or Codex (or both)
 - **Persistent Sessions**: Sessions survive container restarts with full context preservation
 - **Codebase Management**: Clone and work with any GitHub repository
@@ -23,7 +23,7 @@ Control AI coding assistants (Claude Code, Codex) remotely from Telegram, GitHub
 **Accounts Required:**
 - GitHub account (for repository cloning via `/clone` command)
 - At least one of: Claude Pro/Max subscription OR Codex account
-- At least one of: Telegram account OR GitHub account (for interaction)
+- At least one of: Telegram, Slack, Discord, or GitHub account (for interaction)
 
 ---
 
@@ -271,6 +271,54 @@ TELEGRAM_STREAMING_MODE=stream  # stream (default) | batch
 ```
 
 **For streaming mode details, see [Advanced Configuration](#advanced-configuration).**
+
+</details>
+
+<details>
+<summary><b>💼 Slack</b></summary>
+
+**Create Slack App with Socket Mode:**
+
+See the detailed **[Slack Setup Guide](docs/slack-setup.md)** for step-by-step instructions.
+
+**Quick Overview:**
+
+1. Create app at [api.slack.com/apps](https://api.slack.com/apps)
+2. Enable Socket Mode and get App Token (`xapp-...`)
+3. Add Bot Token Scopes: `app_mentions:read`, `chat:write`, `channels:history`, `im:history`, `im:write`
+4. Subscribe to events: `app_mention`, `message.im`
+5. Install to workspace and get Bot Token (`xoxb-...`)
+
+**Set environment variables:**
+
+```env
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+```
+
+**Optional configuration:**
+
+```env
+# Restrict to specific users (comma-separated Slack user IDs)
+SLACK_ALLOWED_USER_IDS=U1234ABCD,W5678EFGH
+
+# Streaming mode
+SLACK_STREAMING_MODE=batch  # batch (default) | stream
+```
+
+**Usage:**
+
+Interact by @mentioning your bot in channels or DM directly:
+
+```
+@your-bot /clone https://github.com/user/repo
+@your-bot /status
+```
+
+Thread replies maintain conversation context, enabling workflows like:
+1. Clone repo in main channel
+2. Continue work in thread
+3. Use `/worktree` for parallel development
 
 </details>
 
@@ -794,9 +842,9 @@ Commands are version-controlled with your codebase, not stored in the database.
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────┐
-│   Platform Adapters (Telegram, GitHub)     │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│   Platform Adapters (Telegram, Slack, Discord, GitHub) │
+└──────────────────────────┬──────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────┐

@@ -13,6 +13,7 @@ import { TelegramAdapter } from './adapters/telegram';
 import { TestAdapter } from './adapters/test';
 import { GitHubAdapter } from './adapters/github';
 import { DiscordAdapter } from './adapters/discord';
+import { SlackAdapter } from './adapters/slack';
 import { handleMessage } from './orchestrator/orchestrator';
 import { pool } from './db/connection';
 import { ConversationLockManager } from './utils/conversation-lock';
@@ -179,6 +180,74 @@ async function main(): Promise<void> {
     console.log('[Discord] Adapter not initialized (missing DISCORD_BOT_TOKEN)');
   }
 
+  // Initialize Slack adapter (conditional)
+  let slack: SlackAdapter | null = null;
+  if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
+    const slackStreamingMode = (process.env.SLACK_STREAMING_MODE ?? 'batch') as 'stream' | 'batch';
+    slack = new SlackAdapter(
+      process.env.SLACK_BOT_TOKEN,
+      process.env.SLACK_APP_TOKEN,
+      slackStreamingMode
+    );
+
+    // Register message handler
+    slack.onMessage(async event => {
+      const conversationId = slack!.getConversationId(event);
+
+      // Skip if no text
+      if (!event.text) return;
+
+      // Strip the bot mention from the message
+      const content = slack!.stripBotMention(event.text);
+      if (!content) return; // Message was only a mention with no content
+
+      // Check for thread context
+      let threadContext: string | undefined;
+      let parentConversationId: string | undefined;
+
+      if (slack!.isThread(event)) {
+        // Fetch thread history for context
+        const history = await slack!.fetchThreadHistory(event);
+        if (history.length > 0) {
+          // Exclude the current message from history
+          const historyWithoutCurrent = history.slice(0, -1);
+          if (historyWithoutCurrent.length > 0) {
+            threadContext = historyWithoutCurrent.join('\n');
+          }
+        }
+
+        // Get parent conversation ID for context inheritance
+        parentConversationId = slack!.getParentConversationId(event) ?? undefined;
+      }
+
+      // Fire-and-forget: handler returns immediately, processing happens async
+      lockManager
+        .acquireLock(conversationId, async () => {
+          await handleMessage(
+            slack!,
+            conversationId,
+            content,
+            undefined,
+            threadContext,
+            parentConversationId
+          );
+        })
+        .catch(async error => {
+          console.error('[Slack] Failed to process message:', error);
+          try {
+            const userMessage = classifyAndFormatError(error as Error);
+            await slack!.sendMessage(conversationId, userMessage);
+          } catch (sendError) {
+            console.error('[Slack] Failed to send error message to user:', sendError);
+          }
+        });
+    });
+
+    await slack.start();
+  } else {
+    console.log('[Slack] Adapter not initialized (missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN)');
+  }
+
   // Setup Express server
   const app = express();
   const port = process.env.PORT ?? 3000;
@@ -338,6 +407,7 @@ async function main(): Promise<void> {
     console.log('[App] Shutting down gracefully...');
     telegram?.stop();
     discord?.stop();
+    slack?.stop();
     void pool.end().then(() => {
       console.log('[Database] Connection pool closed');
       process.exit(0);
@@ -351,6 +421,7 @@ async function main(): Promise<void> {
   const activePlatforms = [];
   if (telegram) activePlatforms.push('Telegram');
   if (discord) activePlatforms.push('Discord');
+  if (slack) activePlatforms.push('Slack');
   if (github) activePlatforms.push('GitHub');
 
   console.log('[App] Remote Coding Agent is ready!');
