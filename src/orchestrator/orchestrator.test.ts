@@ -165,7 +165,7 @@ describe('orchestrator', () => {
 
       expect(platform.sendMessage).toHaveBeenCalledWith(
         'chat-456',
-        'No codebase configured. Use /clone first.'
+        'No codebase configured. Use /clone for a new repo or /repos to list your current repos you can switch to.'
       );
     });
 
@@ -265,7 +265,7 @@ describe('orchestrator', () => {
 
       expect(platform.sendMessage).toHaveBeenCalledWith(
         'chat-456',
-        'No codebase configured. Use /clone first.'
+        'No codebase configured. Use /clone for a new repo or /repos to list your current repos you can switch to.'
       );
     });
   });

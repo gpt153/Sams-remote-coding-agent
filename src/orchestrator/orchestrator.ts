@@ -124,7 +124,7 @@ export async function handleMessage(
         const commandArgs = args.slice(1);
 
         if (!conversation.codebase_id) {
-          await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');
+          await platform.sendMessage(conversationId, 'No codebase configured. Use /clone for a new repo or /repos to list your current repos you can switch to.');
           return;
         }
 
@@ -196,7 +196,7 @@ export async function handleMessage(
     } else {
       // Regular message - route through router template
       if (!conversation.codebase_id) {
-        await platform.sendMessage(conversationId, 'No codebase configured. Use /clone first.');
+        await platform.sendMessage(conversationId, 'No codebase configured. Use /clone for a new repo or /repos to list your current repos you can switch to.');
         return;
       }
 
@@ -257,9 +257,13 @@ export async function handleMessage(
     }
 
     // Check for plan→execute transition (requires NEW session per PRD)
-    // Note: The planning command is named 'plan-feature', not 'plan'
+    // Supports both regular and GitHub workflows:
+    // - plan-feature → execute (regular workflow)
+    // - plan-feature-github → execute-github (GitHub workflow with staging)
     const needsNewSession =
-      commandName === 'execute' && session?.metadata?.lastCommand === 'plan-feature';
+     
+      (commandName === 'execute' && session?.metadata?.lastCommand === 'plan-feature') ||
+      (commandName === 'execute-github' && session?.metadata?.lastCommand === 'plan-feature-github');
 
     if (needsNewSession) {
       console.log('[Orchestrator] Plan→Execute transition: creating new session');

@@ -53,7 +53,10 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./migrations:/docker-entrypoint-initdb.d
+      # Auto-run combined migration on first startup
+      - ./migrations/000_combined.sql:/docker-entrypoint-initdb.d/000_combined.sql:ro
+      # Mount all migrations for manual updates (accessible via /migrations inside container)
+      - ./migrations:/migrations:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:

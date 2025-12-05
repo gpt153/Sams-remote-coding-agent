@@ -20,10 +20,10 @@ import { classifyAndFormatError } from './utils/error-formatter';
 import { seedDefaultCommands } from './scripts/seed-commands';
 
 async function main(): Promise<void> {
-  console.log('[App] Starting Remote Coding Agent (Telegram + Claude MVP)');
+  console.log('[App] Starting Remote Coding Agent');
 
   // Validate required environment variables
-  const required = ['DATABASE_URL', 'TELEGRAM_BOT_TOKEN'];
+  const required = ['DATABASE_URL'];
   const missing = required.filter(v => !process.env[v]);
   if (missing.length > 0) {
     console.error('[App] Missing required environment variables:', missing.join(', '));
@@ -81,6 +81,20 @@ async function main(): Promise<void> {
   // Initialize test adapter
   const testAdapter = new TestAdapter();
   await testAdapter.start();
+
+  // Check that at least one platform is configured
+  const hasTelegram = Boolean(process.env.TELEGRAM_BOT_TOKEN);
+  const hasDiscord = Boolean(process.env.DISCORD_BOT_TOKEN);
+  const hasGitHub = Boolean(process.env.GITHUB_TOKEN && process.env.WEBHOOK_SECRET);
+
+  if (!hasTelegram && !hasDiscord && !hasGitHub) {
+    console.error('[App] No platform adapters configured.');
+    console.error('[App] You must configure at least one platform:');
+    console.error('[App]   - Telegram: Set TELEGRAM_BOT_TOKEN');
+    console.error('[App]   - Discord: Set DISCORD_BOT_TOKEN');
+    console.error('[App]   - GitHub: Set GITHUB_TOKEN and WEBHOOK_SECRET');
+    process.exit(1);
+  }
 
   // Initialize GitHub adapter (conditional)
   let github: GitHubAdapter | null = null;
@@ -289,36 +303,40 @@ async function main(): Promise<void> {
     console.log(`[Express] Health check server listening on port ${String(port)}`);
   });
 
-  // Initialize platform adapter (Telegram)
-  const streamingMode = (process.env.TELEGRAM_STREAMING_MODE ?? 'stream') as 'stream' | 'batch';
-  // TELEGRAM_BOT_TOKEN is validated above in required env vars check
-  const telegram = new TelegramAdapter(process.env.TELEGRAM_BOT_TOKEN!, streamingMode);
+  // Initialize Telegram adapter (conditional)
+  let telegram: TelegramAdapter | null = null;
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    const streamingMode = (process.env.TELEGRAM_STREAMING_MODE ?? 'stream') as 'stream' | 'batch';
+    telegram = new TelegramAdapter(process.env.TELEGRAM_BOT_TOKEN, streamingMode);
 
-  // Register message handler (auth is handled internally by adapter)
-  telegram.onMessage(async ({ conversationId, message }) => {
-    // Fire-and-forget: handler returns immediately, processing happens async
-    lockManager
-      .acquireLock(conversationId, async () => {
-        await handleMessage(telegram, conversationId, message);
-      })
-      .catch(async error => {
-        console.error('[Telegram] Failed to process message:', error);
-        try {
-          const userMessage = classifyAndFormatError(error as Error);
-          await telegram.sendMessage(conversationId, userMessage);
-        } catch (sendError) {
-          console.error('[Telegram] Failed to send error message to user:', sendError);
-        }
-      });
-  });
+    // Register message handler (auth is handled internally by adapter)
+    telegram.onMessage(async ({ conversationId, message }) => {
+      // Fire-and-forget: handler returns immediately, processing happens async
+      lockManager
+        .acquireLock(conversationId, async () => {
+          await handleMessage(telegram!, conversationId, message);
+        })
+        .catch(async error => {
+          console.error('[Telegram] Failed to process message:', error);
+          try {
+            const userMessage = classifyAndFormatError(error as Error);
+            await telegram!.sendMessage(conversationId, userMessage);
+          } catch (sendError) {
+            console.error('[Telegram] Failed to send error message to user:', sendError);
+          }
+        });
+    });
 
-  // Start bot
-  await telegram.start();
+    // Start bot
+    await telegram.start();
+  } else {
+    console.log('[Telegram] Adapter not initialized (missing TELEGRAM_BOT_TOKEN)');
+  }
 
   // Graceful shutdown
   const shutdown = (): void => {
     console.log('[App] Shutting down gracefully...');
-    telegram.stop();
+    telegram?.stop();
     discord?.stop();
     void pool.end().then(() => {
       console.log('[Database] Connection pool closed');
@@ -329,11 +347,14 @@ async function main(): Promise<void> {
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
 
+  // Show active platforms
+  const activePlatforms = [];
+  if (telegram) activePlatforms.push('Telegram');
+  if (discord) activePlatforms.push('Discord');
+  if (github) activePlatforms.push('GitHub');
+
   console.log('[App] Remote Coding Agent is ready!');
-  console.log('[App] Send messages to your Telegram bot to get started');
-  if (discord) {
-    console.log('[App] Discord bot is also running');
-  }
+  console.log(`[App] Active platforms: ${activePlatforms.join(', ')}`);
   console.log(
     '[App] Test endpoint available: POST http://localhost:' + String(port) + '/test/message'
   );

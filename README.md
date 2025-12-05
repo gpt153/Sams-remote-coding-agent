@@ -74,15 +74,10 @@ The `WORKSPACE_PATH` determines where cloned repositories are stored. **Use a pa
 
 ```env
 # Recommended options
-WORKSPACE_PATH=/tmp/remote-agent-workspace  # Temporary (auto-cleaned on reboot)
+WORKSPACE_PATH=~/remote-agent-workspace (persistent in home directory - Linux/Mac)
 # or
-WORKSPACE_PATH=~/remote-agent-workspace     # Persistent in home directory
+WORKSPACE_PATH=C:Users\[your-user-ID]\remote-agent-workspace (Windows)
 ```
-
-**Why avoid `./workspace`?**
-- **Repo nesting**: When working on this repo's issues, clones nest inside the development directory
-- **Path confusion**: Similar paths like `remote-coding-agent` and `workspace/remote-coding-agent` are easy to mix up
-- **Git worktree conflicts**: `git worktree list` shows different results depending on which repo you're in
 
 **Docker note**: Inside containers, the path is always `/workspace` (mapped from your host `WORKSPACE_PATH` in docker-compose.yml).
 
@@ -97,17 +92,26 @@ Set your remote connection string:
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 ```
 
-Run migrations manually after first startup:
+**For fresh installations**, run the combined migration:
 
 ```bash
-# Download the migration file or use psql directly
-psql $DATABASE_URL < migrations/001_initial_schema.sql
+psql $DATABASE_URL < migrations/000_combined.sql
 ```
 
-This creates 3 tables:
+This creates 4 tables:
 - `remote_agent_codebases` - Repository metadata
 - `remote_agent_conversations` - Platform conversation tracking
 - `remote_agent_sessions` - AI session management
+- `remote_agent_command_templates` - Global command templates
+
+**For updates to existing installations**, run only the migrations you haven't applied yet:
+
+```bash
+# Check which migrations you've already run, then apply new ones:
+psql $DATABASE_URL < migrations/002_command_templates.sql
+psql $DATABASE_URL < migrations/003_add_worktree.sql
+psql $DATABASE_URL < migrations/004_worktree_sharing.sql
+```
 
 </details>
 
@@ -120,7 +124,28 @@ Use the `with-db` profile for automatic PostgreSQL setup:
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
 ```
 
-Database will be created automatically when you start with `docker compose --profile with-db`.
+**For fresh installations**, database schema is created automatically when you start with `docker compose --profile with-db`. The combined migration runs on first startup.
+
+**For updates to existing Docker installations**, you need to manually run new migrations:
+
+```bash
+# Connect to the running postgres container
+docker compose exec postgres psql -U postgres -d remote_coding_agent
+
+# Then run the migrations you haven't applied yet
+\i /migrations/002_command_templates.sql
+\i /migrations/003_add_worktree.sql
+\i /migrations/004_worktree_sharing.sql
+\q
+```
+
+Or from your host machine (requires `psql` installed):
+
+```bash
+psql postgresql://postgres:postgres@localhost:5432/remote_coding_agent < migrations/002_command_templates.sql
+psql postgresql://postgres:postgres@localhost:5432/remote_coding_agent < migrations/003_add_worktree.sql
+psql postgresql://postgres:postgres@localhost:5432/remote_coding_agent < migrations/004_worktree_sharing.sql
+```
 
 </details>
 
@@ -361,6 +386,78 @@ Interact by @mentioning `@remote-agent` in issues or PRs:
 **Subsequent mentions:**
 - Resumes existing conversation
 - Maintains full context across comments
+
+</details>
+
+<details>
+<summary><b>💬 Discord</b></summary>
+
+**Create Discord Bot:**
+
+1. Visit [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click "New Application" → Enter a name → Click "Create"
+3. Go to the "Bot" tab in the left sidebar
+4. Click "Add Bot" → Confirm
+
+**Get Bot Token:**
+
+1. Under the Bot tab, click "Reset Token"
+2. Copy the token (starts with a long alphanumeric string)
+3. **Save it securely** - you won't be able to see it again
+
+**Enable Message Content Intent (Required):**
+
+1. Scroll down to "Privileged Gateway Intents"
+2. Enable **"Message Content Intent"** (required for the bot to read messages)
+3. Save changes
+
+**Invite Bot to Your Server:**
+
+1. Go to "OAuth2" → "URL Generator" in the left sidebar
+2. Under "Scopes", select:
+   - ✓ `bot`
+3. Under "Bot Permissions", select:
+   - ✓ Send Messages
+   - ✓ Read Message History
+   - ✓ Create Public Threads (optional, for thread support)
+   - ✓ Send Messages in Threads (optional, for thread support)
+4. Copy the generated URL at the bottom
+5. Paste it in your browser and select your server
+6. Click "Authorize"
+
+**Note:** You need "Manage Server" permission to add bots.
+
+**Set environment variable:**
+
+```env
+DISCORD_BOT_TOKEN=your_bot_token_here
+```
+
+**Configure user whitelist (optional):**
+
+To restrict bot access to specific users, enable Developer Mode in Discord:
+1. User Settings → Advanced → Enable "Developer Mode"
+2. Right-click on users → "Copy User ID"
+3. Add to environment:
+
+```env
+DISCORD_ALLOWED_USER_IDS=123456789012345678,987654321098765432
+```
+
+**Configure streaming mode (optional):**
+
+```env
+DISCORD_STREAMING_MODE=batch  # batch (default) | stream
+```
+
+**For streaming mode details, see [Advanced Configuration](#advanced-configuration).**
+
+**Usage:**
+
+The bot responds to:
+- **Direct Messages**: Just send messages directly
+- **Server Channels**: @mention the bot (e.g., `@YourBotName help me with this code`)
+- **Threads**: Bot maintains context in thread conversations
 
 </details>
 
