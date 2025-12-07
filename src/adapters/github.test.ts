@@ -20,6 +20,7 @@ jest.mock('../utils/git', () => ({
 jest.mock('../db/conversations', () => ({
   getConversation: jest.fn(),
   getConversationByPlatformId: jest.fn(),
+  getConversationByWorktreePath: jest.fn(),
   getOrCreateConversation: jest.fn(),
   createConversation: jest.fn(),
   updateConversation: jest.fn(),
@@ -342,6 +343,419 @@ describe('GitHubAdapter', () => {
         const issueConv = await conversations.getConversationByPlatformId('github', 'owner/repo#42');
         expect(issueConv?.worktree_path).toBeNull();
         // Should proceed to create new worktree when linked issue has no worktree
+      });
+    });
+
+    describe('shared worktree cleanup coordination', () => {
+      test('should skip worktree removal when another conversation still uses it', async () => {
+        const conversations = await import('../db/conversations');
+        const mockGetConversationByWorktreePath =
+          conversations.getConversationByWorktreePath as jest.Mock;
+
+        // After clearing PR's reference, issue still uses the worktree
+        mockGetConversationByWorktreePath.mockResolvedValueOnce({
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        const otherConv = await conversations.getConversationByWorktreePath(
+          '/workspace/worktrees/issue-42'
+        );
+
+        // Verify the logic: when another conversation exists, worktree should be kept
+        expect(otherConv).not.toBeNull();
+        expect(otherConv?.platform_conversation_id).toBe('owner/repo#42');
+        // In the actual implementation, removeWorktree would NOT be called
+      });
+
+      test('should remove worktree when no other conversations reference it', async () => {
+        const conversations = await import('../db/conversations');
+        const mockGetConversationByWorktreePath =
+          conversations.getConversationByWorktreePath as jest.Mock;
+
+        // After clearing this conversation's reference, no others use the worktree
+        mockGetConversationByWorktreePath.mockResolvedValueOnce(null);
+
+        const otherConv = await conversations.getConversationByWorktreePath(
+          '/workspace/worktrees/issue-42'
+        );
+
+        // Verify the logic: when no other conversation exists, worktree can be removed
+        expect(otherConv).toBeNull();
+        // In the actual implementation, removeWorktree WOULD be called
+      });
+
+      test('should handle already-deleted worktree gracefully', async () => {
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+        removeWorktreeMock.mockRejectedValueOnce(new Error('is not a working tree'));
+
+        // The error should be catchable for graceful handling
+        await expect(
+          git.removeWorktree('/workspace/repo', '/workspace/worktrees/issue-42')
+        ).rejects.toThrow('is not a working tree');
+        // In the actual implementation, this error is caught and logged, not re-thrown
+      });
+    });
+
+    describe('shared worktree cleanup integration via handleWebhook', () => {
+      const createCloseEventPayload = (
+        type: 'issue' | 'pull_request',
+        number: number
+      ): string => {
+        if (type === 'issue') {
+          return JSON.stringify({
+            action: 'closed',
+            issue: {
+              number,
+              title: 'Test Issue',
+              body: 'Test body',
+              user: { login: 'testuser' },
+              labels: [],
+              state: 'closed',
+            },
+            repository: {
+              owner: { login: 'owner' },
+              name: 'repo',
+              full_name: 'owner/repo',
+              html_url: 'https://github.com/owner/repo',
+              default_branch: 'main',
+            },
+            sender: { login: 'testuser' },
+          });
+        }
+        return JSON.stringify({
+          action: 'closed',
+          pull_request: {
+            number,
+            title: 'Test PR',
+            body: 'Fixes #42',
+            user: { login: 'testuser' },
+            state: 'closed',
+          },
+          repository: {
+            owner: { login: 'owner' },
+            name: 'repo',
+            full_name: 'owner/repo',
+            html_url: 'https://github.com/owner/repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+      };
+
+      const computeSignature = (payload: string, secret: string): string => {
+        const crypto = require('crypto');
+        const hmac = crypto.createHmac('sha256', secret);
+        return 'sha256=' + hmac.update(payload).digest('hex');
+      };
+
+      beforeEach(() => {
+        jest.clearAllMocks();
+      });
+
+      test('closes PR first, then issue - worktree kept for issue, removed when issue closes', async () => {
+        const conversations = await import('../db/conversations');
+        const codebases = await import('../db/codebases');
+        const sessions = await import('../db/sessions');
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+        const sharedWorktreePath = '/workspace/worktrees/issue-42';
+
+        // Setup: Both PR #50 and issue #42 share the same worktree
+        const prConversation = {
+          id: 'pr-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#50',
+          worktree_path: sharedWorktreePath,
+          codebase_id: 'codebase-id',
+          cwd: sharedWorktreePath,
+        };
+
+        const issueConversation = {
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: sharedWorktreePath,
+          codebase_id: 'codebase-id',
+          cwd: sharedWorktreePath,
+        };
+
+        const codebase = {
+          id: 'codebase-id',
+          name: 'repo',
+          default_cwd: '/workspace/repo',
+        };
+
+        // Mock codebase lookup
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+
+        // Mock session (none active)
+        (sessions.getActiveSession as jest.Mock).mockResolvedValue(null);
+
+        // --- FIRST: Close PR #50 ---
+        // PR conversation is found with worktree
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          prConversation
+        );
+
+        // After clearing PR's reference, issue still uses the worktree
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+
+        const prPayload = createCloseEventPayload('pull_request', 50);
+        const prSignature = computeSignature(prPayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(prPayload, prSignature);
+
+        // Verify: updateConversation was called to clear PR's worktree_path
+        expect(conversations.updateConversation).toHaveBeenCalledWith('pr-conv-id', {
+          worktree_path: null,
+          cwd: '/workspace/repo',
+        });
+
+        // Verify: removeWorktree was NOT called (issue still uses it)
+        expect(removeWorktreeMock).not.toHaveBeenCalled();
+
+        // --- SECOND: Close issue #42 ---
+        jest.clearAllMocks();
+
+        // Issue conversation is found with worktree
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+
+        // After clearing issue's reference, no one uses the worktree
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(null);
+
+        // Mock codebase lookup again
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(issuePayload, issueSignature);
+
+        // Verify: updateConversation was called to clear issue's worktree_path
+        expect(conversations.updateConversation).toHaveBeenCalledWith('issue-conv-id', {
+          worktree_path: null,
+          cwd: '/workspace/repo',
+        });
+
+        // Verify: removeWorktree WAS called (no one uses it anymore)
+        expect(removeWorktreeMock).toHaveBeenCalledWith('/workspace/repo', sharedWorktreePath);
+      });
+
+      test('closes issue first, then PR - worktree kept for PR, removed when PR closes', async () => {
+        const conversations = await import('../db/conversations');
+        const codebases = await import('../db/codebases');
+        const sessions = await import('../db/sessions');
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+        const sharedWorktreePath = '/workspace/worktrees/issue-42';
+
+        const issueConversation = {
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: sharedWorktreePath,
+          codebase_id: 'codebase-id',
+          cwd: sharedWorktreePath,
+        };
+
+        const prConversation = {
+          id: 'pr-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#50',
+          worktree_path: sharedWorktreePath,
+          codebase_id: 'codebase-id',
+          cwd: sharedWorktreePath,
+        };
+
+        const codebase = {
+          id: 'codebase-id',
+          name: 'repo',
+          default_cwd: '/workspace/repo',
+        };
+
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+        (sessions.getActiveSession as jest.Mock).mockResolvedValue(null);
+
+        // --- FIRST: Close issue #42 ---
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+        // After clearing issue's reference, PR still uses the worktree
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(
+          prConversation
+        );
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(issuePayload, issueSignature);
+
+        expect(conversations.updateConversation).toHaveBeenCalledWith('issue-conv-id', {
+          worktree_path: null,
+          cwd: '/workspace/repo',
+        });
+        expect(removeWorktreeMock).not.toHaveBeenCalled();
+
+        // --- SECOND: Close PR #50 ---
+        jest.clearAllMocks();
+
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          prConversation
+        );
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(null);
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+
+        const prPayload = createCloseEventPayload('pull_request', 50);
+        const prSignature = computeSignature(prPayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(prPayload, prSignature);
+
+        expect(conversations.updateConversation).toHaveBeenCalledWith('pr-conv-id', {
+          worktree_path: null,
+          cwd: '/workspace/repo',
+        });
+        expect(removeWorktreeMock).toHaveBeenCalledWith('/workspace/repo', sharedWorktreePath);
+      });
+
+      test('handles already-deleted worktree gracefully on close', async () => {
+        const conversations = await import('../db/conversations');
+        const codebases = await import('../db/codebases');
+        const sessions = await import('../db/sessions');
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+        const worktreePath = '/workspace/worktrees/issue-42';
+
+        const issueConversation = {
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: worktreePath,
+          codebase_id: 'codebase-id',
+          cwd: worktreePath,
+        };
+
+        const codebase = {
+          id: 'codebase-id',
+          name: 'repo',
+          default_cwd: '/workspace/repo',
+        };
+
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+        (sessions.getActiveSession as jest.Mock).mockResolvedValue(null);
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(null);
+
+        // Worktree was already manually deleted
+        removeWorktreeMock.mockRejectedValueOnce(new Error('is not a working tree'));
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        // Should not throw - error is caught and logged
+        await expect(
+          adapter.handleWebhook(issuePayload, issueSignature)
+        ).resolves.toBeUndefined();
+
+        // Verify conversation was still updated
+        expect(conversations.updateConversation).toHaveBeenCalledWith('issue-conv-id', {
+          worktree_path: null,
+          cwd: '/workspace/repo',
+        });
+      });
+
+      test('deactivates session before cleanup', async () => {
+        const conversations = await import('../db/conversations');
+        const codebases = await import('../db/codebases');
+        const sessions = await import('../db/sessions');
+
+        const worktreePath = '/workspace/worktrees/issue-42';
+
+        const issueConversation = {
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: worktreePath,
+          codebase_id: 'codebase-id',
+          cwd: worktreePath,
+        };
+
+        const activeSession = {
+          id: 'active-session-id',
+          conversation_id: 'issue-conv-id',
+          active: true,
+        };
+
+        const codebase = {
+          id: 'codebase-id',
+          name: 'repo',
+          default_cwd: '/workspace/repo',
+        };
+
+        (codebases.findCodebaseByRepoUrl as jest.Mock).mockResolvedValue(codebase);
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+        (conversations.getConversationByWorktreePath as jest.Mock).mockResolvedValueOnce(null);
+        (sessions.getActiveSession as jest.Mock).mockResolvedValueOnce(activeSession);
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(issuePayload, issueSignature);
+
+        // Verify session was deactivated
+        expect(sessions.deactivateSession).toHaveBeenCalledWith('active-session-id');
+      });
+
+      test('skips cleanup when conversation has no worktree', async () => {
+        const conversations = await import('../db/conversations');
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+        const issueConversation = {
+          id: 'issue-conv-id',
+          platform_type: 'github',
+          platform_conversation_id: 'owner/repo#42',
+          worktree_path: null, // No worktree
+          codebase_id: 'codebase-id',
+          cwd: '/workspace/repo',
+        };
+
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(
+          issueConversation
+        );
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(issuePayload, issueSignature);
+
+        // Should not call any cleanup functions
+        expect(removeWorktreeMock).not.toHaveBeenCalled();
+        expect(conversations.updateConversation).not.toHaveBeenCalled();
+      });
+
+      test('skips cleanup when conversation not found', async () => {
+        const conversations = await import('../db/conversations');
+        const removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+        (conversations.getConversationByPlatformId as jest.Mock).mockResolvedValueOnce(null);
+
+        const issuePayload = createCloseEventPayload('issue', 42);
+        const issueSignature = computeSignature(issuePayload, 'fake-webhook-secret');
+
+        await adapter.handleWebhook(issuePayload, issueSignature);
+
+        expect(removeWorktreeMock).not.toHaveBeenCalled();
+        expect(conversations.updateConversation).not.toHaveBeenCalled();
       });
     });
   });

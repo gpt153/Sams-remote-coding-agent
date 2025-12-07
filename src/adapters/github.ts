@@ -433,6 +433,7 @@ export class GitHubAdapter implements IPlatformAdapter {
 
   /**
    * Clean up worktree when an issue/PR is closed
+   * Handles shared worktrees: only removes if no other conversations reference it
    */
   private async cleanupWorktree(owner: string, repo: string, number: number): Promise<void> {
     const conversationId = this.buildConversationId(owner, repo, number);
@@ -452,29 +453,46 @@ export class GitHubAdapter implements IPlatformAdapter {
     }
 
     const { codebase } = await this.getOrCreateCodebaseForRepo(owner, repo);
+    const worktreePath = conversation.worktree_path;
 
-    try {
-      await removeWorktree(codebase.default_cwd, conversation.worktree_path);
-      console.log(`[GitHub] Removed worktree: ${conversation.worktree_path}`);
-    } catch (error) {
-      const err = error as Error;
-      console.error('[GitHub] Failed to remove worktree:', error);
-      // Notify user about orphaned worktree (likely has uncommitted changes)
-      const hasUncommittedChanges = err.message.includes('contains modified or untracked files');
-      if (hasUncommittedChanges) {
-        await this.sendMessage(
-          conversationId,
-          `Warning: Could not remove worktree at \`${conversation.worktree_path}\` because it contains uncommitted changes. You may want to manually commit or discard these changes.`
-        );
-      }
-      // Continue with database cleanup anyway
-    }
-
-    // Clear worktree path from conversation, reset cwd to main repo
+    // Clear worktree path from THIS conversation first
+    // This must happen before checking for other users of the worktree
     await db.updateConversation(conversation.id, {
       worktree_path: null,
       cwd: codebase.default_cwd,
     });
+
+    // Check if any OTHER conversations still use this worktree (shared worktree case)
+    const otherConv = await db.getConversationByWorktreePath(worktreePath);
+    if (otherConv) {
+      console.log(
+        `[GitHub] Keeping worktree ${worktreePath}, still used by ${otherConv.platform_conversation_id}`
+      );
+      console.log(`[GitHub] Cleanup complete for ${conversationId}`);
+      return;
+    }
+
+    // No other conversations use this worktree - safe to remove
+    try {
+      await removeWorktree(codebase.default_cwd, worktreePath);
+      console.log(`[GitHub] Removed worktree: ${worktreePath}`);
+    } catch (error) {
+      const err = error as Error;
+      // Handle already-deleted worktree gracefully (e.g., manual cleanup)
+      if (err.message.includes('is not a working tree')) {
+        console.log(`[GitHub] Worktree already removed: ${worktreePath}`);
+      } else {
+        console.error('[GitHub] Failed to remove worktree:', error);
+        // Notify user about orphaned worktree (likely has uncommitted changes)
+        const hasUncommittedChanges = err.message.includes('contains modified or untracked files');
+        if (hasUncommittedChanges) {
+          await this.sendMessage(
+            conversationId,
+            `Warning: Could not remove worktree at \`${worktreePath}\` because it contains uncommitted changes. You may want to manually commit or discard these changes.`
+          );
+        }
+      }
+    }
 
     console.log(`[GitHub] Cleanup complete for ${conversationId}`);
   }
