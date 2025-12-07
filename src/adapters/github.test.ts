@@ -61,6 +61,19 @@ jest.mock('@octokit/rest', () => ({
   })),
 }));
 
+// Mock child_process for exec calls
+jest.mock('child_process', () => ({
+  exec: jest.fn((_cmd, callback) => {
+    callback(null, '', '');
+  }),
+}));
+
+// Mock fs/promises for file system operations
+jest.mock('fs/promises', () => ({
+  readdir: jest.fn().mockResolvedValue([]),
+  access: jest.fn().mockResolvedValue(undefined),
+}));
+
 describe('GitHubAdapter', () => {
   let adapter: GitHubAdapter;
 
@@ -756,6 +769,451 @@ describe('GitHubAdapter', () => {
 
         expect(removeWorktreeMock).not.toHaveBeenCalled();
         expect(conversations.updateConversation).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('handleWebhook integration tests', () => {
+    let adapter: GitHubAdapter;
+    let createWorktreeMock: jest.Mock;
+    let removeWorktreeMock: jest.Mock;
+    let getOrCreateConversationMock: jest.Mock;
+    let updateConversationMock: jest.Mock;
+    let getConversationByPlatformIdMock: jest.Mock;
+    let findCodebaseByRepoUrlMock: jest.Mock;
+    let createCodebaseMock: jest.Mock;
+    let handleMessageMock: jest.Mock;
+    let mockCreateComment: jest.Mock;
+
+    beforeEach(() => {
+      // Reset all mocks
+      jest.clearAllMocks();
+
+      // Get reference to Octokit mock
+      const { Octokit } = require('@octokit/rest');
+      const MockOctokit = Octokit as jest.Mock;
+      mockCreateComment = jest.fn().mockResolvedValue({});
+
+      MockOctokit.mockImplementation(() => ({
+        rest: {
+          issues: {
+            createComment: mockCreateComment,
+          },
+          repos: {
+            get: jest.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      }));
+
+      adapter = new GitHubAdapter('fake-token', 'test-secret');
+
+      // Get references to the mocked functions
+      createWorktreeMock = git.createWorktreeForIssue as jest.Mock;
+      removeWorktreeMock = git.removeWorktree as jest.Mock;
+
+      // Import and setup database mocks
+      const dbConversations = require('../db/conversations');
+      const dbCodebases = require('../db/codebases');
+      const orchestrator = require('../orchestrator/orchestrator');
+
+      getOrCreateConversationMock = dbConversations.getOrCreateConversation as jest.Mock;
+      updateConversationMock = dbConversations.updateConversation as jest.Mock;
+      getConversationByPlatformIdMock = dbConversations.getConversationByPlatformId as jest.Mock;
+      findCodebaseByRepoUrlMock = dbCodebases.findCodebaseByRepoUrl as jest.Mock;
+      createCodebaseMock = dbCodebases.createCodebase as jest.Mock;
+      handleMessageMock = orchestrator.handleMessage as jest.Mock;
+
+      // Default mock implementations
+      createWorktreeMock.mockResolvedValue('/workspace/worktrees/issue-42');
+      removeWorktreeMock.mockResolvedValue(undefined);
+      handleMessageMock.mockResolvedValue(undefined);
+    });
+
+    describe('issue opened with @remote-agent mention', () => {
+      test('should create worktree and update conversation', async () => {
+        // Setup: new conversation (no codebase_id)
+        getOrCreateConversationMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: null,
+          cwd: null,
+          worktree_path: null,
+        });
+
+        // Setup: new codebase
+        findCodebaseByRepoUrlMock.mockResolvedValue(null);
+        createCodebaseMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        const payload = JSON.stringify({
+          action: 'opened',
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: '@remote-agent please help with this',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'open',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        // Create signature (HMAC SHA-256)
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify worktree was created for issue (isPR = false)
+        expect(createWorktreeMock).toHaveBeenCalled();
+        const createWorktreeCall = createWorktreeMock.mock.calls[0];
+        expect(createWorktreeCall[0]).toMatch(/test-repo$/);
+        expect(createWorktreeCall[1]).toBe(42);
+        expect(createWorktreeCall[2]).toBe(false);
+
+        // Verify conversation was updated with worktree path
+        expect(updateConversationMock).toHaveBeenCalledWith('conv-1', {
+          codebase_id: 'codebase-1',
+          cwd: '/workspace/worktrees/issue-42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        // Verify orchestrator was called
+        expect(handleMessageMock).toHaveBeenCalled();
+      });
+
+      test('should handle worktree creation failure and notify user', async () => {
+        getOrCreateConversationMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: null,
+          cwd: null,
+          worktree_path: null,
+        });
+
+        findCodebaseByRepoUrlMock.mockResolvedValue(null);
+        createCodebaseMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        // Simulate worktree creation failure
+        createWorktreeMock.mockRejectedValue(new Error('Branch already exists'));
+
+        const payload = JSON.stringify({
+          action: 'opened',
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: '@remote-agent help',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'open',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify error message was sent
+        expect(mockCreateComment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            owner: 'testorg',
+            repo: 'test-repo',
+            issue_number: 42,
+            body: expect.stringContaining('Failed to create isolated worktree'),
+          })
+        );
+
+        // Verify orchestrator was NOT called (stopped before message handling)
+        expect(handleMessageMock).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('pull request opened with @remote-agent mention', () => {
+      test('should create pr-XX worktree for pull requests', async () => {
+        getOrCreateConversationMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: null,
+          cwd: null,
+          worktree_path: null,
+        });
+
+        findCodebaseByRepoUrlMock.mockResolvedValue(null);
+        createCodebaseMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        createWorktreeMock.mockResolvedValue('/workspace/worktrees/pr-42');
+
+        const payload = JSON.stringify({
+          action: 'opened',
+          pull_request: {
+            number: 42,
+            title: 'Test PR',
+            body: '@remote-agent review this',
+            user: { login: 'testuser' },
+            state: 'open',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify worktree was created for PR (isPR = true)
+        expect(createWorktreeMock).toHaveBeenCalled();
+        const createWorktreeCall = createWorktreeMock.mock.calls[0];
+        expect(createWorktreeCall[0]).toMatch(/test-repo$/);
+        expect(createWorktreeCall[1]).toBe(42);
+        expect(createWorktreeCall[2]).toBe(true);
+
+        // Verify conversation was updated with PR worktree path
+        expect(updateConversationMock).toHaveBeenCalledWith('conv-1', {
+          codebase_id: 'codebase-1',
+          cwd: '/workspace/worktrees/pr-42',
+          worktree_path: '/workspace/worktrees/pr-42',
+        });
+      });
+    });
+
+    describe('issue closed event', () => {
+      test('should call removeWorktree and update conversation', async () => {
+        // Setup: existing conversation with worktree
+        getConversationByPlatformIdMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: 'codebase-1',
+          cwd: '/workspace/worktrees/issue-42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        findCodebaseByRepoUrlMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        const payload = JSON.stringify({
+          action: 'closed',
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: 'Issue body',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'closed',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify worktree was removed
+        expect(removeWorktreeMock).toHaveBeenCalledWith(
+          expect.stringMatching(/test-repo$/),
+          '/workspace/worktrees/issue-42'
+        );
+
+        // Verify conversation was updated (worktree_path cleared)
+        expect(updateConversationMock).toHaveBeenCalledWith('conv-1', {
+          worktree_path: null,
+          cwd: expect.stringMatching(/test-repo$/),
+        });
+
+        // Verify orchestrator was NOT called (close events don't process messages)
+        expect(handleMessageMock).not.toHaveBeenCalled();
+      });
+
+      test('should handle removeWorktree failure with uncommitted changes', async () => {
+        getConversationByPlatformIdMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: 'codebase-1',
+          cwd: '/workspace/worktrees/issue-42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        findCodebaseByRepoUrlMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        // Simulate removal failure
+        removeWorktreeMock.mockRejectedValue(
+          new Error('contains modified or untracked files')
+        );
+
+        const payload = JSON.stringify({
+          action: 'closed',
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: 'Issue body',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'closed',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify removal was attempted
+        expect(removeWorktreeMock).toHaveBeenCalled();
+
+        // Verify warning message was sent to user
+        expect(mockCreateComment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            owner: 'testorg',
+            repo: 'test-repo',
+            issue_number: 42,
+            body: expect.stringContaining('Could not remove worktree'),
+          })
+        );
+
+        // Verify conversation was still updated despite removal failure
+        expect(updateConversationMock).toHaveBeenCalledWith('conv-1', {
+          worktree_path: null,
+          cwd: expect.stringMatching(/test-repo$/),
+        });
+      });
+    });
+
+    describe('existing conversation', () => {
+      test('should not create new worktree for existing conversations', async () => {
+        // Setup: existing conversation with codebase already set
+        getOrCreateConversationMock.mockResolvedValue({
+          id: 'conv-1',
+          codebase_id: 'codebase-1',
+          cwd: '/workspace/worktrees/issue-42',
+          worktree_path: '/workspace/worktrees/issue-42',
+        });
+
+        findCodebaseByRepoUrlMock.mockResolvedValue({
+          id: 'codebase-1',
+          name: 'test-repo',
+          default_cwd: '/workspace/test-repo',
+        });
+
+        const payload = JSON.stringify({
+          action: 'created',
+          comment: {
+            body: '@remote-agent can you also help with X?',
+            user: { login: 'testuser' },
+          },
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: 'Original body',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'open',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify worktree was NOT created (existing conversation)
+        expect(createWorktreeMock).not.toHaveBeenCalled();
+
+        // Verify orchestrator was still called
+        expect(handleMessageMock).toHaveBeenCalled();
+      });
+    });
+
+    describe('webhook without @remote-agent mention', () => {
+      test('should not process webhooks without mention', async () => {
+        const payload = JSON.stringify({
+          action: 'opened',
+          issue: {
+            number: 42,
+            title: 'Test Issue',
+            body: 'No mention here',
+            user: { login: 'testuser' },
+            labels: [],
+            state: 'open',
+          },
+          repository: {
+            owner: { login: 'testorg' },
+            name: 'test-repo',
+            full_name: 'testorg/test-repo',
+            html_url: 'https://github.com/testorg/test-repo',
+            default_branch: 'main',
+          },
+          sender: { login: 'testuser' },
+        });
+
+        const crypto = require('crypto');
+        const signature = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(payload).digest('hex');
+
+        await adapter.handleWebhook(payload, signature);
+
+        // Verify nothing was processed
+        expect(createWorktreeMock).not.toHaveBeenCalled();
+        expect(handleMessageMock).not.toHaveBeenCalled();
       });
     });
   });
