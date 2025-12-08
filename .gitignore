@@ -63,3 +63,4 @@ worktrees
 .claude/worktree-registry.json
 
 .agents/PRDs
+.agents/context
