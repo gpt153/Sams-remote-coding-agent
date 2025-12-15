@@ -73,9 +73,12 @@ describe('TelegramAdapter', () => {
       // First call with MarkdownV2
       expect(mockSendMessage).toHaveBeenNthCalledWith(1, 12345, '*formatted*', {
         parse_mode: 'MarkdownV2',
+        message_thread_id: undefined,
       });
-      // Second call plain text fallback
-      expect(mockSendMessage).toHaveBeenNthCalledWith(2, 12345, '**test**');
+      // Second call plain text fallback (still includes message_thread_id in options)
+      expect(mockSendMessage).toHaveBeenNthCalledWith(2, 12345, '**test**', {
+        message_thread_id: undefined,
+      });
     });
 
     test('should apply markdown formatting to each chunk for long messages', async () => {

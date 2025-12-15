@@ -140,7 +140,7 @@ describe('orchestrator', () => {
 
       await handleMessage(platform, 'chat-456', '/status');
 
-      expect(mockHandleCommand).toHaveBeenCalledWith(mockConversation, '/status');
+      expect(mockHandleCommand).toHaveBeenCalledWith(mockConversation, '/status', undefined);
       expect(platform.sendMessage).toHaveBeenCalledWith('chat-456', 'Command executed');
       expect(mockGetAssistantClient).not.toHaveBeenCalled();
     });
