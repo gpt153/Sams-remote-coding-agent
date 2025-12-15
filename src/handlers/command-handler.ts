@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile, readdir, access, rm } from 'fs/promises';
 import { join, basename, resolve, relative } from 'path';
+import { Telegraf } from 'telegraf';
 import { Conversation, CommandResult } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
@@ -13,6 +14,7 @@ import * as sessionDb from '../db/sessions';
 import * as templateDb from '../db/command-templates';
 import { isPathWithinWorkspace } from '../utils/path-validation';
 import { listWorktrees } from '../utils/git';
+import { handleNewTopic } from './new-topic-handler';
 
 const execFileAsync = promisify(execFile);
 
@@ -97,11 +99,59 @@ export function parseCommand(text: string): { command: string; args: string[] } 
 
 export async function handleCommand(
   conversation: Conversation,
-  message: string
+  message: string,
+  bot?: Telegraf
 ): Promise<CommandResult> {
   const { command, args } = parseCommand(message);
 
   switch (command) {
+    case 'new-topic': {
+      // Only allow in general chat (not in topics)
+      // Check if conversation ID has no colon (general chat)
+      if (conversation.platform_conversation_id.includes(':')) {
+        return {
+          success: false,
+          message: '❌ /new-topic can only be used in general chat, not in topics.',
+        };
+      }
+
+      if (args.length < 1) {
+        return {
+          success: false,
+          message: 'Usage: /new-topic <project-name>\n\nExample: /new-topic Github search agent',
+        };
+      }
+
+      const projectName = args.join(' ');
+      const githubToken = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+
+      if (!githubToken) {
+        return {
+          success: false,
+          message: '❌ GitHub token not configured. Set GH_TOKEN or GITHUB_TOKEN in environment.',
+        };
+      }
+
+      if (!bot) {
+        return {
+          success: false,
+          message:
+            '❌ /new-topic is only available for Telegram. Use this command in the Telegram group.',
+        };
+      }
+
+      const workspacePath = resolve(process.env.WORKSPACE_PATH ?? '/workspace');
+
+      const result = await handleNewTopic({
+        projectName,
+        groupChatId: conversation.platform_conversation_id,
+        githubToken,
+        workspacePath,
+        bot,
+      });
+
+      return { success: result.success, message: result.message, modified: true };
+    }
     case 'help':
       return {
         success: true,

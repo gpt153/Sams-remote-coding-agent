@@ -15,6 +15,7 @@ import { substituteVariables } from '../utils/variable-substitution';
 import { classifyAndFormatError } from '../utils/error-formatter';
 import { formatForNonTechnical } from '../utils/response-formatter';
 import { getAssistantClient } from '../clients/factory';
+import { TelegramAdapter } from '../adapters/telegram';
 
 /**
  * Wraps command content with execution context to signal the AI should execute immediately
@@ -114,11 +115,17 @@ export async function handleMessage(
         'templates',
         'template-delete',
         'worktree',
+        'new-topic',
       ];
 
       if (deterministicCommands.includes(command)) {
         console.log(`[Orchestrator] Processing slash command: ${message}`);
-        const result = await commandHandler.handleCommand(conversation, message);
+
+        // Get bot instance for Telegram (needed for /new-topic)
+        const bot =
+          platform.getPlatformType() === 'telegram' ? (platform as TelegramAdapter).getBot() : undefined;
+
+        const result = await commandHandler.handleCommand(conversation, message, bot);
         await platform.sendMessage(conversationId, result.message);
 
         // Reload conversation if modified
