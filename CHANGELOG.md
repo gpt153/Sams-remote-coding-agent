@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix /new-topic to link conversation with codebase - topics now work immediately without "No codebase configured" error
+- Fix template to include complete structure (.agents/reference/ docs, all subdirectories) and simplify sync to copy entire directories
 - Fix /new-topic to copy all command directories (core_piv_loop, github_bug_fix, validation) and preserve folder structure - was only copying 17 of 32 commands
 - Fix test assertions to match updated function signatures (handleCommand bot parameter, Telegram sendMessage options)
 - Fix ESLint configuration to properly ignore client projects and root-level utility scripts
