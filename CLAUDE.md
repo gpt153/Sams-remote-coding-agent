@@ -270,9 +270,68 @@ PORT=3000
 
 # Builtin Commands (default: true)
 LOAD_BUILTIN_COMMANDS=true  # Load maintained workflow templates on startup
+
+# MCP Server Configuration (Model Context Protocol)
+# Provides additional capabilities to bot-spawned Claude Code instances
+ENABLE_ARCHON_MCP=false           # Task management (requires: pip install uv)
+ENABLE_PLAYWRIGHT_MCP=false       # Browser automation
+ENABLE_GITHUB_MCP=false           # GitHub API integration
 ```
 
 **Loading:** Use `dotenv` package, load in `src/index.ts`
+
+### MCP Server Support (Model Context Protocol)
+
+Bot-spawned Claude Code instances can access MCP servers for enhanced capabilities like task management (Archon), browser automation (Playwright), and GitHub API integration.
+
+**How It Works:**
+- MCP servers are configured programmatically in `src/clients/claude.ts`
+- Passed to Claude Agent SDK via `mcpServers` option
+- Each bot-spawned instance gets access to configured servers
+- Different from terminal Claude Code (which uses global MCP config)
+
+**Available MCP Servers:**
+
+**1. Archon MCP** - Task Management
+```env
+ENABLE_ARCHON_MCP=true
+ARCHON_MCP_COMMAND=uvx              # Command to run (default: uvx)
+ARCHON_MCP_ARGS=archon              # Args (default: archon)
+ARCHON_TOKEN=                       # Optional: Auth token
+ARCHON_DB_PATH=~/.archon/archon.db  # Optional: DB path
+```
+Requires: `pip install uv` (Python package manager)
+
+**2. Playwright MCP** - Browser Automation
+```env
+ENABLE_PLAYWRIGHT_MCP=true
+```
+Installed automatically via `npx -y @playwright/mcp` when enabled.
+
+**3. GitHub MCP** - GitHub API
+```env
+ENABLE_GITHUB_MCP=true
+# Uses GITHUB_TOKEN from main config
+```
+Installed automatically via `npx -y @modelcontextprotocol/server-github` when enabled.
+
+**4. Custom HTTP MCP Servers**
+```env
+MCP_HTTP_SERVERS=name1:url1:header1=value1,name2:url2
+```
+
+**Terminal vs Bot Instances:**
+- **Terminal Claude Code**: Uses global MCP config (`~/.claude/`, etc.)
+- **Bot Instances**: Use programmatic config (environment variables)
+- This is why bot instances don't automatically inherit your terminal's MCP servers
+
+**Testing MCP Access:**
+Send a message to the bot asking about available tools. With Playwright enabled:
+```
+You: What tools do you have access to?
+Bot: I have access to: Read, Write, Edit, Bash, Grep, Glob,
+     mcp__playwright__navigate, mcp__playwright__click, ...
+```
 
 ### Telegram Topics (Multi-Project Development)
 

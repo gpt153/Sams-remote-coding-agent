@@ -12,6 +12,24 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { IAssistantClient, MessageChunk } from '../types';
 
 /**
+ * MCP Server configuration types
+ */
+interface McpServerStdio {
+  type: 'stdio';
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+interface McpServerHttp {
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+type McpServer = McpServerStdio | McpServerHttp;
+
+/**
  * Content block type for assistant messages
  * Represents text or tool_use blocks from Claude API responses
  */
@@ -20,6 +38,82 @@ interface ContentBlock {
   text?: string;
   name?: string;
   input?: Record<string, unknown>;
+}
+
+/**
+ * Build MCP server configuration from environment variables
+ * Enables Archon, Playwright, and other MCP servers for bot-spawned Claude instances
+ */
+function buildMcpServers(): Record<string, McpServer> {
+  const mcpServers: Record<string, McpServer> = {};
+
+  // Archon MCP - Task management
+  // Requires: pip install uv && uvx archon (or npx -y archon if npm package available)
+  // Set ENABLE_ARCHON_MCP=true and configure ARCHON_MCP_COMMAND if using custom installation
+  if (process.env.ENABLE_ARCHON_MCP === 'true') {
+    const command = process.env.ARCHON_MCP_COMMAND || 'uvx';
+    const args = process.env.ARCHON_MCP_ARGS?.split(',') || ['archon'];
+
+    mcpServers.archon = {
+      type: 'stdio',
+      command,
+      args,
+      env: {
+        ...(process.env.ARCHON_TOKEN ? { ARCHON_TOKEN: process.env.ARCHON_TOKEN } : {}),
+        ...(process.env.ARCHON_DB_PATH ? { ARCHON_DB_PATH: process.env.ARCHON_DB_PATH } : {}),
+      },
+    };
+    console.log(`[Claude] Archon MCP enabled (${command} ${args.join(' ')})`);
+  }
+
+  // Playwright MCP - Browser automation
+  if (process.env.ENABLE_PLAYWRIGHT_MCP === 'true') {
+    mcpServers.playwright = {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', '@playwright/mcp'],
+    };
+    console.log('[Claude] Playwright MCP enabled');
+  }
+
+  // GitHub MCP - GitHub API integration
+  if (process.env.ENABLE_GITHUB_MCP === 'true' && process.env.GITHUB_TOKEN) {
+    mcpServers.github = {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: {
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      },
+    };
+    console.log('[Claude] GitHub MCP enabled');
+  }
+
+  // Custom HTTP MCP servers via environment variable
+  // Format: MCP_HTTP_SERVERS=name1:url1:header1=value1,name2:url2
+  if (process.env.MCP_HTTP_SERVERS) {
+    const servers = process.env.MCP_HTTP_SERVERS.split(',');
+    for (const serverConfig of servers) {
+      const [name, url, ...headerPairs] = serverConfig.split(':');
+      if (name && url) {
+        const headers: Record<string, string> = {};
+        for (const pair of headerPairs) {
+          const [key, value] = pair.split('=');
+          if (key && value) {
+            headers[key] = value;
+          }
+        }
+        mcpServers[name] = {
+          type: 'http',
+          url,
+          ...(Object.keys(headers).length > 0 ? { headers } : {}),
+        };
+        console.log(`[Claude] Custom HTTP MCP enabled: ${name}`);
+      }
+    }
+  }
+
+  return mcpServers;
 }
 
 /**
@@ -38,12 +132,16 @@ export class ClaudeClient implements IAssistantClient {
     cwd: string,
     resumeSessionId?: string
   ): AsyncGenerator<MessageChunk> {
+    // Build MCP server configuration
+    const mcpServers = buildMcpServers();
+
     const options: Options = {
       cwd,
       env: {
         PATH: process.env.PATH,
         ...process.env,
       },
+      mcpServers, // Enable MCP servers for bot-spawned Claude instances
       permissionMode: 'bypassPermissions', // YOLO mode - auto-approve all tools
       stderr: (data: string) => {
         // Capture and log Claude Code stderr - but filter out informational messages
