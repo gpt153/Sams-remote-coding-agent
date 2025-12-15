@@ -41,40 +41,20 @@ async function isGitRepo(path: string): Promise<boolean> {
 
 /**
  * Sync template structure to a single project
+ * Copies entire .claude/ and .agents/ directories from template
  */
 async function syncProject(projectPath: string): Promise<void> {
-  console.log(`  - Syncing .claude/commands...`);
-  await cp(join(TEMPLATE_DIR, '.claude/commands'), join(projectPath, '.claude/commands'), {
+  console.log(`  - Syncing .claude/ directory...`);
+  await cp(join(TEMPLATE_DIR, '.claude'), join(projectPath, '.claude'), {
     recursive: true,
     force: true, // Overwrite existing files
   });
 
-  console.log(`  - Syncing .claude/PRPs...`);
-  await cp(join(TEMPLATE_DIR, '.claude/PRPs'), join(projectPath, '.claude/PRPs'), {
+  console.log(`  - Syncing .agents/ directory...`);
+  await cp(join(TEMPLATE_DIR, '.agents'), join(projectPath, '.agents'), {
     recursive: true,
     force: true,
   });
-
-  console.log(`  - Syncing .claude/settings.json...`);
-  await cp(join(TEMPLATE_DIR, '.claude/settings.json'), join(projectPath, '.claude/settings.json'));
-
-  console.log(`  - Syncing .agents/commands...`);
-  await cp(join(TEMPLATE_DIR, '.agents/commands'), join(projectPath, '.agents/commands'), {
-    recursive: true,
-    force: true,
-  });
-
-  console.log(`  - Syncing .agents/examples...`);
-  await cp(join(TEMPLATE_DIR, '.agents/examples'), join(projectPath, '.agents/examples'), {
-    recursive: true,
-    force: true,
-  });
-
-  console.log(`  - Syncing .agents/PRD.md...`);
-  await cp(join(TEMPLATE_DIR, '.agents/PRD.md'), join(projectPath, '.agents/PRD.md'));
-
-  console.log(`  - Syncing .agents/README.md...`);
-  await cp(join(TEMPLATE_DIR, '.agents/README.md'), join(projectPath, '.agents/README.md'));
 }
 
 /**
