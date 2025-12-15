@@ -48,22 +48,22 @@ function buildMcpServers(): Record<string, McpServer> {
   const mcpServers: Record<string, McpServer> = {};
 
   // Archon MCP - Task management
-  // Requires: pip install uv && uvx archon (or npx -y archon if npm package available)
-  // Set ENABLE_ARCHON_MCP=true and configure ARCHON_MCP_COMMAND if using custom installation
+  // Requires: Archon running via Docker on port 8051 (or custom port)
+  // Set ENABLE_ARCHON_MCP=true and ARCHON_MCP_URL to enable
   if (process.env.ENABLE_ARCHON_MCP === 'true') {
-    const command = process.env.ARCHON_MCP_COMMAND || 'uvx';
-    const args = process.env.ARCHON_MCP_ARGS?.split(',') || ['archon'];
+    const url = process.env.ARCHON_MCP_URL || 'http://localhost:8051/mcp';
+    const headers: Record<string, string> = {};
+
+    if (process.env.ARCHON_TOKEN) {
+      headers['Authorization'] = `Bearer ${process.env.ARCHON_TOKEN}`;
+    }
 
     mcpServers.archon = {
-      type: 'stdio',
-      command,
-      args,
-      env: {
-        ...(process.env.ARCHON_TOKEN ? { ARCHON_TOKEN: process.env.ARCHON_TOKEN } : {}),
-        ...(process.env.ARCHON_DB_PATH ? { ARCHON_DB_PATH: process.env.ARCHON_DB_PATH } : {}),
-      },
+      type: 'http',
+      url,
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
     };
-    console.log(`[Claude] Archon MCP enabled (${command} ${args.join(' ')})`);
+    console.log(`[Claude] Archon MCP enabled (HTTP: ${url})`);
   }
 
   // Playwright MCP - Browser automation

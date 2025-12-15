@@ -273,7 +273,7 @@ LOAD_BUILTIN_COMMANDS=true  # Load maintained workflow templates on startup
 
 # MCP Server Configuration (Model Context Protocol)
 # Provides additional capabilities to bot-spawned Claude Code instances
-ENABLE_ARCHON_MCP=false           # Task management (requires: pip install uv)
+ENABLE_ARCHON_MCP=false           # Task management (requires: Archon Docker)
 ENABLE_PLAYWRIGHT_MCP=false       # Browser automation
 ENABLE_GITHUB_MCP=false           # GitHub API integration
 ```
@@ -295,12 +295,11 @@ Bot-spawned Claude Code instances can access MCP servers for enhanced capabiliti
 **1. Archon MCP** - Task Management
 ```env
 ENABLE_ARCHON_MCP=true
-ARCHON_MCP_COMMAND=uvx              # Command to run (default: uvx)
-ARCHON_MCP_ARGS=archon              # Args (default: archon)
-ARCHON_TOKEN=                       # Optional: Auth token
-ARCHON_DB_PATH=~/.archon/archon.db  # Optional: DB path
+ARCHON_MCP_URL=http://localhost:8051/mcp  # MCP HTTP endpoint (default: http://localhost:8051/mcp)
+ARCHON_TOKEN=                             # Optional: Auth token
 ```
-Requires: `pip install uv` (Python package manager)
+Requires: Archon running via Docker on port 8051
+Setup: `git clone https://github.com/coleam00/archon.git && cd archon && docker compose up -d`
 
 **2. Playwright MCP** - Browser Automation
 ```env
