@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switch Archon MCP integration from stdio-based (uvx command) to HTTP-based (Docker service on port 8051) for improved reliability and simpler setup
+
 ### Fixed
+
+- Fix test assertions to match updated function signatures (handleCommand bot parameter, Telegram sendMessage options)
+- Fix ESLint configuration to properly ignore client projects and root-level utility scripts
+- Apply Prettier formatting across codebase for consistent code style
 
 ## [0.1.0] - 2025-12-08
 
