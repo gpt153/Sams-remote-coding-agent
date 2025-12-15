@@ -4,8 +4,8 @@
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
+import { writeFile, cp } from 'fs/promises';
+import { join, resolve } from 'path';
 import { Telegraf } from 'telegraf';
 import { createRepository } from '../utils/github-repo';
 import * as codebaseDb from '../db/codebases';
@@ -37,6 +37,49 @@ function sanitizeProjectName(name: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Copy template structure to new project
+ * Includes .claude/, .agents/, and CLAUDE.md
+ */
+async function copyTemplateStructure(
+  repoPath: string,
+  metadata: {
+    projectName: string;
+    githubUrl: string;
+    archonProjectId: string;
+  }
+): Promise<void> {
+  const templateDir = resolve(__dirname, '../../.template');
+
+  // Copy .claude/ directory
+  console.log('[NewTopic] Copying .claude/ directory...');
+  await cp(join(templateDir, '.claude'), join(repoPath, '.claude'), {
+    recursive: true,
+  });
+
+  // Copy .agents/ directory
+  console.log('[NewTopic] Copying .agents/ directory...');
+  await cp(join(templateDir, '.agents'), join(repoPath, '.agents'), {
+    recursive: true,
+  });
+
+  // Create customized CLAUDE.md
+  console.log('[NewTopic] Creating CLAUDE.md...');
+  const templatePath = join(templateDir, 'CLAUDE.md');
+  const { readFile } = await import('fs/promises');
+  const template = await readFile(templatePath, 'utf-8');
+
+  const customized = template
+    .replace(/\{\{PROJECT_NAME\}\}/g, metadata.projectName)
+    .replace(/\{\{GITHUB_URL\}\}/g, metadata.githubUrl)
+    .replace(/\{\{ARCHON_PROJECT_ID\}\}/g, metadata.archonProjectId)
+    .replace(/\{\{WORKSPACE_PATH\}\}/g, repoPath)
+    .replace(/\{\{PROJECT_DESCRIPTION\}\}/g, `${metadata.projectName} - Created via Remote Coding Agent`)
+    .replace(/\{\{CUSTOM_NOTES\}\}/g, 'Add project-specific notes here.');
+
+  await writeFile(join(repoPath, 'CLAUDE.md'), customized, 'utf-8');
 }
 
 /**
@@ -107,7 +150,15 @@ export async function handleNewTopic(options: NewTopicOptions): Promise<NewTopic
     console.log('[NewTopic] Archon project creation - to be handled by AI');
     const archonProjectId = `pending-${Date.now()}`;
 
-    // 5. Update README with metadata
+    // 5. Copy template structure (.claude/, .agents/, CLAUDE.md)
+    console.log('[NewTopic] Copying template structure...');
+    await copyTemplateStructure(repoPath, {
+      projectName,
+      githubUrl: repo.htmlUrl,
+      archonProjectId,
+    });
+
+    // 6. Update README with metadata
     console.log('[NewTopic] Updating README with metadata');
     await createProjectReadme(repoPath, {
       projectName,
@@ -116,12 +167,12 @@ export async function handleNewTopic(options: NewTopicOptions): Promise<NewTopic
       workspacePath: repoPath,
     });
 
-    // 6. Commit README changes
-    await execFileAsync('git', ['-C', repoPath, 'add', 'README.md']);
-    await execFileAsync('git', ['-C', repoPath, 'commit', '-m', 'Add project metadata to README']);
+    // 7. Commit all changes (template + README)
+    await execFileAsync('git', ['-C', repoPath, 'add', '.']);
+    await execFileAsync('git', ['-C', repoPath, 'commit', '-m', 'Add project template and metadata']);
     await execFileAsync('git', ['-C', repoPath, 'push']);
 
-    // 7. Create codebase record in database
+    // 8. Create codebase record in database
     console.log('[NewTopic] Creating codebase record');
     const codebase = await codebaseDb.createCodebase({
       name: projectName,
@@ -130,7 +181,7 @@ export async function handleNewTopic(options: NewTopicOptions): Promise<NewTopic
       ai_assistant_type: process.env.DEFAULT_AI_ASSISTANT ?? 'claude',
     });
 
-    // 8. Create Telegram topic
+    // 9. Create Telegram topic
     console.log('[NewTopic] Creating Telegram topic');
     const topic = await bot.telegram.createForumTopic(parseInt(groupChatId), projectName);
 
