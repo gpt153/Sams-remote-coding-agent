@@ -386,11 +386,11 @@ async function main(): Promise<void> {
     telegram = new TelegramAdapter(process.env.TELEGRAM_BOT_TOKEN, streamingMode);
 
     // Register message handler (auth is handled internally by adapter)
-    telegram.onMessage(async ({ conversationId, message }) => {
+    telegram.onMessage(async ({ conversationId, message, images }) => {
       // Fire-and-forget: handler returns immediately, processing happens async
       lockManager
         .acquireLock(conversationId, async () => {
-          await handleMessage(telegram!, conversationId, message);
+          await handleMessage(telegram!, conversationId, message, undefined, undefined, undefined, images);
         })
         .catch(async error => {
           console.error('[Telegram] Failed to process message:', error);

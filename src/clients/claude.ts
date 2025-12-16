@@ -9,7 +9,10 @@
  * - Content blocks are typed via inline assertions for clarity
  */
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
-import { IAssistantClient, MessageChunk } from '../types';
+import { IAssistantClient, MessageChunk, ImageAttachment } from '../types';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { randomUUID } from 'crypto';
 
 /**
  * MCP Server configuration types
@@ -130,7 +133,8 @@ export class ClaudeClient implements IAssistantClient {
   async *sendQuery(
     prompt: string,
     cwd: string,
-    resumeSessionId?: string
+    resumeSessionId?: string,
+    images?: ImageAttachment[]
   ): AsyncGenerator<MessageChunk> {
     // Build MCP server configuration
     const mcpServers = buildMcpServers();
@@ -176,8 +180,38 @@ export class ClaudeClient implements IAssistantClient {
       console.log(`[Claude] Starting new session in ${cwd}`);
     }
 
+    // Handle images by saving them to the working directory
+    // Claude Code SDK can then reference these files
+    let enhancedPrompt = prompt;
+    if (images && images.length > 0) {
+      const imageDir = join(cwd, '.screenshots');
+      try {
+        await mkdir(imageDir, { recursive: true });
+      } catch (error) {
+        console.warn('[Claude] Failed to create screenshots directory:', error);
+      }
+
+      const imagePaths: string[] = [];
+      for (const image of images) {
+        const filename = image.filename || `screenshot_${randomUUID()}.jpg`;
+        const imagePath = join(imageDir, filename);
+
+        try {
+          await writeFile(imagePath, image.data);
+          imagePaths.push(imagePath);
+          console.log(`[Claude] Saved image to ${imagePath}`);
+        } catch (error) {
+          console.error(`[Claude] Failed to save image ${filename}:`, error);
+        }
+      }
+
+      if (imagePaths.length > 0) {
+        enhancedPrompt = `${prompt}\n\n📸 Screenshots attached (${imagePaths.length} image${imagePaths.length > 1 ? 's' : ''}):\n${imagePaths.map(p => `- ${p}`).join('\n')}\n\nPlease analyze the screenshot${imagePaths.length > 1 ? 's' : ''} using the Read tool to view the image${imagePaths.length > 1 ? 's' : ''}.`;
+      }
+    }
+
     try {
-      for await (const msg of query({ prompt, options })) {
+      for await (const msg of query({ prompt: enhancedPrompt, options })) {
         if (msg.type === 'assistant') {
           // Process assistant message content blocks
           // Type assertion needed: SDK's strict types require explicit handling

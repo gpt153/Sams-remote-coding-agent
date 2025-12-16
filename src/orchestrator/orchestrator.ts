@@ -4,7 +4,7 @@
  */
 import { readFile, access } from 'fs/promises';
 import { join } from 'path';
-import { IPlatformAdapter } from '../types';
+import { IPlatformAdapter, ImageAttachment } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
@@ -40,7 +40,8 @@ export async function handleMessage(
   message: string,
   issueContext?: string, // Optional GitHub issue/PR context to append AFTER command loading
   threadContext?: string, // Optional thread message history for context
-  parentConversationId?: string // Optional parent channel ID for thread inheritance
+  parentConversationId?: string, // Optional parent channel ID for thread inheritance
+  images?: ImageAttachment[] // Optional image attachments (e.g., screenshots from Telegram)
 ): Promise<void> {
   try {
     console.log(`[Orchestrator] Handling message for conversation ${conversationId}`);
@@ -338,7 +339,8 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(
         promptToSend,
         cwd,
-        session.assistant_session_id ?? undefined
+        session.assistant_session_id ?? undefined,
+        images
       )) {
         if (msg.type === 'assistant' && msg.content) {
           await platform.sendMessage(conversationId, msg.content);
@@ -359,7 +361,8 @@ export async function handleMessage(
       for await (const msg of aiClient.sendQuery(
         promptToSend,
         cwd,
-        session.assistant_session_id ?? undefined
+        session.assistant_session_id ?? undefined,
+        images
       )) {
         if (msg.type === 'assistant' && msg.content) {
           assistantMessages.push(msg.content);

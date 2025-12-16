@@ -84,6 +84,15 @@ export interface IPlatformAdapter {
 }
 
 /**
+ * Image attachment for AI assistant
+ */
+export interface ImageAttachment {
+  data: Buffer; // Image file data
+  mimeType: string; // e.g., 'image/jpeg', 'image/png'
+  filename?: string; // Optional filename
+}
+
+/**
  * Message chunk from AI assistant
  */
 export interface MessageChunk {
@@ -106,8 +115,14 @@ export interface IAssistantClient {
    * @param prompt - User message or prompt
    * @param cwd - Working directory for the assistant
    * @param resumeSessionId - Optional session ID to resume
+   * @param images - Optional array of image attachments
    */
-  sendQuery(prompt: string, cwd: string, resumeSessionId?: string): AsyncGenerator<MessageChunk>;
+  sendQuery(
+    prompt: string,
+    cwd: string,
+    resumeSessionId?: string,
+    images?: ImageAttachment[]
+  ): AsyncGenerator<MessageChunk>;
 
   /**
    * Get the assistant type identifier

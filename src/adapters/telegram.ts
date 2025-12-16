@@ -3,7 +3,7 @@
  * Handles message sending with 4096 character limit splitting
  */
 import { Telegraf, Context } from 'telegraf';
-import { IPlatformAdapter } from '../types';
+import { IPlatformAdapter, ImageAttachment } from '../types';
 import { parseAllowedUserIds, isUserAuthorized } from '../utils/telegram-auth';
 import { convertToTelegramMarkdown, stripMarkdown } from '../utils/telegram-markdown';
 
@@ -16,6 +16,7 @@ export interface TelegramMessageContext {
   conversationId: string;
   message: string;
   userId: number | undefined;
+  images?: ImageAttachment[]; // Optional attached images/photos
 }
 
 export class TelegramAdapter implements IPlatformAdapter {
@@ -253,11 +254,50 @@ export class TelegramAdapter implements IPlatformAdapter {
    */
   async start(): Promise<void> {
     // Register message handler before launch
-    this.bot.on('message', ctx => {
-      if (!('text' in ctx.message)) return;
+    this.bot.on('message', async ctx => {
+      // Extract message text and photos
+      let message = '';
+      const images: ImageAttachment[] = [];
 
-      const message = ctx.message.text;
-      if (!message) return;
+      // Handle text messages
+      if ('text' in ctx.message) {
+        message = ctx.message.text || '';
+      }
+
+      // Handle photo messages (screenshots)
+      if ('photo' in ctx.message && ctx.message.photo && ctx.message.photo.length > 0) {
+        // Get the largest photo (last one in array)
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+
+        // Use caption as message text if present
+        if ('caption' in ctx.message && ctx.message.caption) {
+          message = ctx.message.caption;
+        } else if (!message) {
+          // No text and no caption - provide default message
+          message = 'What do you see in this image?';
+        }
+
+        try {
+          // Download the photo
+          const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+          const response = await fetch(fileLink.href);
+          const buffer = Buffer.from(await response.arrayBuffer());
+
+          images.push({
+            data: buffer,
+            mimeType: 'image/jpeg', // Telegram photos are always JPEG
+            filename: `telegram_photo_${photo.file_id}.jpg`,
+          });
+
+          console.log(`[Telegram] Downloaded photo: ${photo.file_id} (${buffer.length} bytes)`);
+        } catch (error) {
+          console.error('[Telegram] Failed to download photo:', error);
+          // Continue without the image
+        }
+      }
+
+      // Skip if no message text and no images
+      if (!message && images.length === 0) return;
 
       // Authorization check - verify sender is in whitelist
       const userId = ctx.from.id;
@@ -313,7 +353,12 @@ export class TelegramAdapter implements IPlatformAdapter {
       if (this.messageHandler) {
         const conversationId = this.getConversationId(ctx);
         // Fire-and-forget - errors handled by caller
-        void this.messageHandler({ conversationId, message, userId });
+        void this.messageHandler({
+          conversationId,
+          message,
+          userId,
+          images: images.length > 0 ? images : undefined
+        });
       }
     });
 

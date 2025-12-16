@@ -2,7 +2,7 @@
  * Codex SDK wrapper
  * Provides async generator interface for streaming Codex responses
  */
-import { IAssistantClient, MessageChunk } from '../types';
+import { IAssistantClient, MessageChunk, ImageAttachment } from '../types';
 
 // Type definition for Codex SDK (ESM import)
 type CodexSDK = typeof import('@openai/codex-sdk');
@@ -48,7 +48,8 @@ export class CodexClient implements IAssistantClient {
   async *sendQuery(
     prompt: string,
     cwd: string,
-    resumeSessionId?: string
+    resumeSessionId?: string,
+    images?: ImageAttachment[]
   ): AsyncGenerator<MessageChunk> {
     const codex = await getCodex();
 
@@ -81,6 +82,12 @@ export class CodexClient implements IAssistantClient {
         workingDirectory: cwd,
         skipGitRepoCheck: true,
       });
+    }
+
+    // Note: Codex doesn't natively support images yet
+    // We'll add support when the SDK adds it
+    if (images && images.length > 0) {
+      console.warn('[Codex] Image attachments not yet supported by Codex SDK');
     }
 
     try {
